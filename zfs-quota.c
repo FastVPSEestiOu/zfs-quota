@@ -190,6 +190,16 @@ struct vnotifier_block zfsquota_notifier_block = {
 
 static int __init zfsquota_init(void)
 {
+	struct proc_dir_entry *de;
+
+	de = proc_create("zfsquota", S_IFDIR | S_IRUSR | S_IXUSR,
+			 &glob_proc_root, NULL);
+
+	if (de)
+		de->proc_iops = NULL;
+	else
+		return -ENOMEM;
+
 	virtinfo_notifier_register(VITYPE_QUOTA, &zfsquota_notifier_block);
 
 	register_quota_format(&zfs_quota_empty_v2_format);
@@ -201,6 +211,8 @@ static void __exit zfsquota_exit(void)
 	virtinfo_notifier_unregister(VITYPE_QUOTA, &zfsquota_notifier_block);
 
 	unregister_quota_format(&zfs_quota_empty_v2_format);
+
+	remove_proc_entry("zfsquota", NULL);
 	return;
 }
 
