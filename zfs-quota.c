@@ -173,8 +173,7 @@ static int zfsquota_notifier_call(struct vnotifier_block *self,
 	case VIRTINFO_QUOTA_OFF:
 		err = NOTIFY_BAD;
 		sb = viq->super;
-		if (strcmp
-		    (sb->s_op->get_quota_root(sb)->i_sb->s_type->name, "zfs")) {
+		if (sb->s_qcop != &zfsquota_q_cops) {
 			err = NOTIFY_OK;
 			break;
 		}
