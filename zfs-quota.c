@@ -56,7 +56,34 @@ static int zfsquota_off(struct super_block *sb, int type, int remount)
 static int zfsquota_get_dqblk(struct super_block *sb, int type,
 			      qid_t id, struct if_dqblk *di)
 {
+	int err;
+	struct super_block *zfs_sb = sb->s_op->get_quota_root(sb)->i_sb;
+	uint64_t rid = id;
+	uint64_t used, quota;
+
 	printk("%s\n", __func__);
+
+	err = zfs_userspace_one(zfs_sb->s_fs_info,
+				type ==
+				USRQUOTA ? ZFS_PROP_USERUSED :
+				ZFS_PROP_GROUPUSED, "", rid, &used);
+	if (err)
+		return err;
+
+	err = zfs_userspace_one(zfs_sb->s_fs_info,
+				type ==
+				USRQUOTA ? ZFS_PROP_USERQUOTA :
+				ZFS_PROP_GROUPQUOTA, "", rid, &quota);
+	if (err)
+		return err;
+
+	di->dqb_curspace = used;
+	di->dqb_valid = QIF_SPACE;
+	if (quota) {
+		di->dqb_valid |= QIF_BLIMITS;
+		di->dqb_bsoftlimit = di->dqb_bhardlimit = quota;
+	}
+
 	return 0;
 }
 
@@ -122,23 +149,37 @@ static int zfsquota_notifier_call(struct vnotifier_block *self,
 
 	switch (n) {
 	case VIRTINFO_QUOTA_ON:
-		err = NOTIFY_OK | NOTIFY_STOP_MASK;
+		err = NOTIFY_BAD;
 		sb = viq->super;
 		if (strcmp
-		    (sb->s_op->get_quota_root(sb)->i_sb->s_type->name,
-		     "zfs") == 0) {
-			sb->s_qcop = &zfsquota_q_cops;
-			sb->s_dquot.flags =
-			    dquot_state_flag(DQUOT_USAGE_ENABLED,
-					     USRQUOTA) |
-			    dquot_state_flag(DQUOT_USAGE_ENABLED, GRPQUOTA);
-			sb->s_dquot.info[USRQUOTA].dqi_format =
-			    &zfs_quota_empty_v2_format;
-			sb->s_dquot.info[GRPQUOTA].dqi_format =
-			    &zfs_quota_empty_v2_format;
+		    (sb->s_op->get_quota_root(sb)->i_sb->s_type->name, "zfs")) {
+			err = NOTIFY_OK;
+			break;
 		}
+		if (!try_module_get(THIS_MODULE))
+			break;
 
+		sb->s_qcop = &zfsquota_q_cops;
+		sb->s_dquot.flags =
+		    dquot_state_flag(DQUOT_USAGE_ENABLED,
+				     USRQUOTA) |
+		    dquot_state_flag(DQUOT_USAGE_ENABLED, GRPQUOTA);
+		sb->s_dquot.info[USRQUOTA].dqi_format =
+		    &zfs_quota_empty_v2_format;
+		sb->s_dquot.info[GRPQUOTA].dqi_format =
+		    &zfs_quota_empty_v2_format;
+		err = NOTIFY_OK | NOTIFY_STOP_MASK;
 		break;
+	case VIRTINFO_QUOTA_OFF:
+		err = NOTIFY_BAD;
+		sb = viq->super;
+		if (strcmp
+		    (sb->s_op->get_quota_root(sb)->i_sb->s_type->name, "zfs")) {
+			err = NOTIFY_OK;
+			break;
+		}
+		module_put(THIS_MODULE);
+		err = NOTIFY_OK;
 	}
 	return err;
 }
@@ -152,6 +193,7 @@ static int __init zfsquota_init(void)
 {
 	virtinfo_notifier_register(VITYPE_QUOTA, &zfsquota_notifier_block);
 
+	register_quota_format(&zfs_quota_empty_v2_format);
 	return 0;
 }
 
@@ -159,6 +201,7 @@ static void __exit zfsquota_exit(void)
 {
 	virtinfo_notifier_unregister(VITYPE_QUOTA, &zfsquota_notifier_block);
 
+	unregister_quota_format(&zfs_quota_empty_v2_format);
 	return;
 }
 
