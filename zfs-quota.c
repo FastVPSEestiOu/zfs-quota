@@ -63,6 +63,8 @@ static int zfsquota_get_dqblk(struct super_block *sb, int type,
 
 	printk("%s\n", __func__);
 
+	di->dqb_valid = 0;
+
 	err = zfs_userspace_one(zfs_sb->s_fs_info,
 				type ==
 				USRQUOTA ? ZFS_PROP_USERUSED :
@@ -78,12 +80,38 @@ static int zfsquota_get_dqblk(struct super_block *sb, int type,
 		return err;
 
 	di->dqb_curspace = used;
-	di->dqb_valid = QIF_SPACE;
+	di->dqb_valid |= QIF_SPACE;
 	if (quota) {
-		di->dqb_valid |= QIF_BLIMITS;
 		di->dqb_bsoftlimit = di->dqb_bhardlimit = quota;
+		di->dqb_valid |= QIF_BLIMITS;
 	}
+#ifdef DNODE_FLAG_USEROBJUSED_ACCOUNTED
+	err = zfs_userspace_one(zfs_sb->s_fs_info,
+				type ==
+				USRQUOTA ? ZFS_PROP_USEROBJUSED :
+				ZFS_PROP_GROUPOBJUSED, "", rid, &used);
+	if (err == EOPNOTSUPP)
+		goto no_obj_quota;
 
+	if (err)
+		return err;
+
+	err = zfs_userspace_one(zfs_sb->s_fs_info,
+				type ==
+				USRQUOTA ? ZFS_PROP_USEROBJQUOTA :
+				ZFS_PROP_GROUPOBJQUOTA, "", rid, &quota);
+	if (err)
+		return err;
+
+	di->dqb_curinodes = used;
+	di->dqb_valid |= QIF_INODES;
+	if (quota) {
+		di->dqb_isoftlimit = di->dqb_ihardlimit = quota;
+		di->dqb_valid |= QIF_ILIMITS;
+	}
+#endif /* DNODE_FLAG_USEROBJUSED_ACCOUNTED */
+
+no_obj_quota:
 	return 0;
 }
 
