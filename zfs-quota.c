@@ -17,8 +17,9 @@
 
 #define DQBLOCK_SIZE 1024
 
-static const char *aquota_user = "quota.user";
-static const char *aquota_group = "quota.group";
+static struct proc_dir_entry *glob_zfsquota_proc;
+static const char aquota_user[] = "quota.user";
+static const char aquota_group[] = "quota.group";
 
 static int spam_zfs_quota(struct super_block *zfs_sb)
 {
@@ -232,6 +233,7 @@ static int read_proc_quotafile(char *page, off_t off, int count, int *eof)
 	size_t buf_size;
 	//struct dq_kinfo *dqi;
 	int res = 0;
+	printk("%s\n", __func__);
 
 	tmp = kmalloc(DQBLOCK_SIZE, GFP_KERNEL);
 	if (!tmp)
@@ -320,6 +322,7 @@ static ssize_t zfs_aquotf_read(struct file *file,
 	struct block_device *bdev;
 	struct super_block *sb;
 	int eof, err;
+	printk("%s\n", __func__);
 
 	err = -ENOMEM;
 	page = (char *)__get_free_page(GFP_KERNEL);
@@ -390,6 +393,7 @@ static int zfs_aquotq_readdir(struct file *file, void *data, filldir_t filler)
 {
 	loff_t n;
 	int err;
+	printk("%s\n", __func__);
 
 	n = file->f_pos;
 	for (err = 0; !err; n++) {
@@ -476,6 +480,7 @@ static struct dentry *zfs_aquotq_lookup(struct inode *dir,
 	struct inode *inode;
 	struct zfs_aquotq_lookdata d;
 	int k;
+	printk("%s\n", __func__);
 
 	if (dentry->d_name.len == sizeof(aquota_user) - 1) {
 		if (memcmp(dentry->d_name.name, aquota_user,
@@ -535,6 +540,7 @@ static int zfs_aquot_buildmntlist(struct ve_struct *ve, struct list_head *head)
 	struct path root;
 	struct zfs_aquot_de *p;
 	int err;
+	printk("%s\n", __func__);
 
 #ifdef CONFIG_VE
 	root = ve->root_path;
@@ -584,6 +590,7 @@ static void zfs_aquot_releasemntlist(struct ve_struct *ve,
 				     struct list_head *head)
 {
 	struct zfs_aquot_de *p;
+	printk("%s\n", __func__);
 
 	while (!list_empty(head)) {
 		p = list_entry(head->next, typeof(*p), list);
@@ -602,6 +609,8 @@ static int zfs_aquotd_readdir(struct file *file, void *data, filldir_t filler)
 	loff_t i, n;
 	char buf[24];
 	int l, err;
+
+	printk("%s\n", __func__);
 
 	i = 0;
 	n = file->f_pos;
@@ -641,7 +650,7 @@ static int zfs_aquotd_readdir(struct file *file, void *data, filldir_t filler)
 
 	list_for_each_entry(de, &mntlist, list) {
 		sb = de->mnt->mnt_sb;
-		if (get_device_perms_ve(S_IFBLK, sb->s_dev, FMODE_QUOTACTL))
+		if (sb->s_qcop != &zfsquota_q_cops)
 			continue;
 
 		i++;
@@ -696,6 +705,8 @@ static struct dentry *zfs_aquotd_lookup(struct inode *dir,
 	dev_t dev;
 	struct inode *inode;
 
+	printk("%s\n", __func__);
+
 	ve = dir->i_sb->s_type->owner_env;
 	old_ve = set_exec_env(ve);
 #ifdef CONFIG_VE
@@ -727,8 +738,10 @@ static struct dentry *zfs_aquotd_lookup(struct inode *dir,
 	}
 	dev = new_decode_dev(dev);
 
+/*
 	if (get_device_perms_ve(S_IFBLK, dev, FMODE_QUOTACTL))
 		goto out;
+ */
 
 	inode = iget5_locked(dir->i_sb, zfs_aquot_getino(dev),
 			     zfs_aquotd_looktest, zfs_aquotd_lookset,
@@ -787,15 +800,11 @@ static struct inode_operations zfs_aquotd_inode_operations = {
 
 static int __init zfsquota_init(void)
 {
-	struct proc_dir_entry *de;
-
-	de = proc_create("zfsquota", S_IFDIR | S_IRUSR | S_IXUSR,
-			 &glob_proc_root, &zfs_aquotd_file_operations);
-
-	if (de)
-		de->proc_iops = &zfs_aquotd_inode_operations;
-	else
-		return -ENOMEM;
+	glob_zfsquota_proc =
+	    create_proc_entry("zfsquota", S_IFDIR | S_IRUSR | S_IXUSR,
+			      glob_proc_vz_dir);
+	glob_zfsquota_proc->proc_iops = &zfs_aquotd_inode_operations;
+	glob_zfsquota_proc->proc_fops = &zfs_aquotd_file_operations;
 
 	virtinfo_notifier_register(VITYPE_QUOTA, &zfsquota_notifier_block);
 
@@ -809,7 +818,7 @@ static void __exit zfsquota_exit(void)
 
 	unregister_quota_format(&zfs_quota_empty_v2_format);
 
-	remove_proc_entry("zfsquota", NULL);
+	remove_proc_entry("zfsquota", glob_proc_vz_dir);
 	return;
 }
 
