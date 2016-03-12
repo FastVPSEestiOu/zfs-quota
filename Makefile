@@ -1,5 +1,5 @@
 
-obj-m = zfs-quota.o
+obj-m = src/zfs-quota.o
 ccflags-y := -I/opt/zfs/src/spl-0.6.5/include
 ccflags-y += -DHAVE_USLEEP_RANGE=1
 ccflags-y += -I/opt/zfs/src/zfs-0.6.5/include
@@ -15,7 +15,7 @@ KDIR ?= /lib/modules/`uname -r`/build
 
 all: zfs-quota.ko
 
-zfs-quota.ko: zfs-quota.c
+zfs-quota.ko: src/zfs-quota.c
 	@echo Compiling for kernel $(KVERSION)
 	make -C $(KDIR) M=$(CURDIR) modules CONFIG_DEBUG_INFO=y
 	@touch $@
