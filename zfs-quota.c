@@ -17,6 +17,17 @@
 
 #define DQBLOCK_SIZE 1024
 
+struct v1_disk_dqblk {
+	__u32 dqb_bhardlimit;	/* absolute limit on disk blks alloc */
+	__u32 dqb_bsoftlimit;	/* preferred limit on disk blks */
+	__u32 dqb_curblocks;	/* current block count */
+	__u32 dqb_ihardlimit;	/* absolute limit on allocated inodes */
+	__u32 dqb_isoftlimit;	/* preferred inode limit */
+	__u32 dqb_curinodes;	/* current # allocated inodes */
+	time_t dqb_btime;	/* time limit for excessive disk use */
+	time_t dqb_itime;	/* time limit for excessive inode use */
+};
+
 static struct proc_dir_entry *glob_zfsquota_proc;
 static const char aquota_user[] = "quota.user";
 static const char aquota_group[] = "quota.group";
@@ -70,7 +81,7 @@ static int zfsquota_get_dqblk(struct super_block *sb, int type,
 
 	printk("%s\n", __func__);
 
-	di->dqb_valid = 0;
+	memset(di, 0, sizeof(*di));
 
 	err = zfs_userspace_one(zfs_sb->s_fs_info,
 				type ==
@@ -223,65 +234,75 @@ struct vnotifier_block zfsquota_notifier_block = {
 	.priority = INT_MAX / 2
 };
 
+/* TODO refactor this extracting the body from zfsquota_get_dqblk
+ * and share it with this one so zfs_sb could be re-used */
+static int read_v1_disk_dqblk(struct super_block *sb, void *buf, int type,
+			      qid_t qid)
+{
+	struct if_dqblk dqblk;
+	struct v1_disk_dqblk *v1_dqblk = buf;
+
+#if 1
+	if (zfsquota_get_dqblk(sb, type, qid, &dqblk))
+		return -EIO;
+#endif
+
+	v1_dqblk->dqb_bhardlimit = dqblk.dqb_bhardlimit;
+	v1_dqblk->dqb_bsoftlimit = dqblk.dqb_bsoftlimit;
+	v1_dqblk->dqb_curblocks = dqblk.dqb_curspace / DQBLOCK_SIZE;
+	v1_dqblk->dqb_ihardlimit = dqblk.dqb_ihardlimit;
+	v1_dqblk->dqb_isoftlimit = dqblk.dqb_isoftlimit;
+	v1_dqblk->dqb_curinodes = dqblk.dqb_curinodes;
+	v1_dqblk->dqb_btime = dqblk.dqb_btime;
+	v1_dqblk->dqb_itime = dqblk.dqb_itime;
+
+	return sizeof(*v1_dqblk);
+}
+
 /*
  * FIXME: this function can handle quota files up to 2GB only.
  */
-static int read_proc_quotafile(char *page, off_t off, int count, int *eof)
+static int read_proc_quotafile(char *page, off_t off, int count,
+			       struct super_block *sb, int type)
 {
-	off_t blk_num, blk_off, buf_off;
+	off_t blk_num, buf_off;
 	char *tmp;
-	size_t buf_size;
-	//struct dq_kinfo *dqi;
+	ssize_t buf_size;
 	int res = 0;
 	printk("%s\n", __func__);
 
-	tmp = kmalloc(DQBLOCK_SIZE, GFP_KERNEL);
+	if (off >= 1024 * 40)
+		return 0;
+
+	tmp = kmalloc(sizeof(struct v1_disk_dqblk), GFP_KERNEL);
 	if (!tmp)
 		return -ENOMEM;
 
-#if 0
-	qtd = data;
-	mutex_lock(&vz_quota_mutex);
-	mutex_lock(&qtd->qmblk->dq_mutex);
-
-	res = 0;
-	tree = QUGID_TREE(qtd->qmblk, qtd->type);
-	if (!tree) {
-		*eof = 1;
-		goto out_dq;
-	}
-
-	dqi = &qtd->qmblk->dq_ugid_info[qtd->type];
-
 	buf_off = 0;
-	buf_size = count;
-	blk_num = off / DQBLOCK_SIZE;
-	blk_off = off % DQBLOCK_SIZE;
+	buf_size =
+	    (count / sizeof(struct v1_disk_dqblk)) *
+	    sizeof(struct v1_disk_dqblk);
+
+	blk_num = off / sizeof(struct v1_disk_dqblk);
 
 	while (buf_size > 0) {
-		off_t len;
+		printk("buf_size = %lu, buf_off = %lu, blk_num = %lu\n",
+		       buf_size, buf_off, blk_num);
 
-		len = min((size_t) (DQBLOCK_SIZE - blk_off), buf_size);
-		res = read_block(blk_num, tmp, tree, dqi, qtd->type);
+		res = read_v1_disk_dqblk(sb, tmp, type, blk_num);
 		if (res < 0)
 			goto out_dq;
-		if (res == BLOCK_NOT_FOUND) {
-			*eof = 1;
-			break;
-		}
-		memcpy(page + buf_off, tmp + blk_off, len);
+		memcpy(page + buf_off, tmp,
+		       min((size_t) buf_size, (size_t) res));
+
+		buf_size -= res;
+		buf_off += res;
 
 		blk_num++;
-		buf_size -= len;
-		blk_off = 0;
-		buf_off += len;
 	}
 	res = buf_off;
 
 out_dq:
-	mutex_unlock(&qtd->qmblk->dq_mutex);
-	mutex_unlock(&vz_quota_mutex);
-#endif
 	kfree(tmp);
 
 	return res;
@@ -321,7 +342,7 @@ static ssize_t zfs_aquotf_read(struct file *file,
 	struct inode *inode;
 	struct block_device *bdev;
 	struct super_block *sb;
-	int eof, err;
+	int err, type;
 	printk("%s\n", __func__);
 
 	err = -ENOMEM;
@@ -335,6 +356,7 @@ static ssize_t zfs_aquotf_read(struct file *file,
 	if (bdev == NULL)
 		goto out_err;
 	sb = get_super(bdev);
+	type = PROC_I(inode)->fd - 1;
 	bdput(bdev);
 	if (sb == NULL)
 		goto out_err;
@@ -347,7 +369,7 @@ static ssize_t zfs_aquotf_read(struct file *file,
 		if (bufsize <= 0)
 			break;
 
-		l = read_proc_quotafile(page, *ppos, bufsize, &eof);
+		l = read_proc_quotafile(page, *ppos, bufsize, sb, type);
 		if (l <= 0)
 			break;
 
@@ -460,7 +482,7 @@ static int zfs_aquotq_lookset(struct inode *inode, void *data)
 	zfs_aquot_setidev(inode, d->dev);
 
 	/* Setting size */
-	inode->i_size = 1024;
+	inode->i_size = 100 * sizeof(struct v1_disk_dqblk);
 	return 0;
 }
 
