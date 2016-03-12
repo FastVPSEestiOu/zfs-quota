@@ -110,13 +110,13 @@ int zfsquota_get_dqblk(struct super_block *sb, int type,
 		di->dqb_isoftlimit = di->dqb_ihardlimit = quota;
 		di->dqb_valid |= QIF_ILIMITS;
 	}
-#endif /* DNODE_FLAG_USEROBJUSED_ACCOUNTED */
 
 no_obj_quota:
+	;
+
+#endif /* DNODE_FLAG_USEROBJUSED_ACCOUNTED */
 	return 0;
 }
-
-EXPORT_SYMBOL(zfsquota_get_dqblk);
 
 static int zfsquota_set_dqblk(struct super_block *sb, int type,
 			      qid_t id, struct if_dqblk *di)
