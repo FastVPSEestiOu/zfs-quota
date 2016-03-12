@@ -1,6 +1,6 @@
 
-obj-m = src/quota.o
-zfs-quota-y := src/proc.c
+obj-m = zfs-quota.o
+zfs-quota-y := quota.o proc.o
 ccflags-y := -I/opt/zfs/src/spl-0.6.5/include
 ccflags-y += -DHAVE_USLEEP_RANGE=1
 ccflags-y += -I/opt/zfs/src/zfs-0.6.5/include
@@ -14,9 +14,9 @@ KBUILD_EXTRA_SYMBOLS += /opt/zfs/src/zfs-0.6.5/2.6.32/Module.symvers
 
 KDIR ?= /lib/modules/`uname -r`/build
 
-all: src/zfs-quota.ko
+all: zfs-quota.ko
 
-src/zfs-quota.ko: src/quota.c src/proc.c
+zfs-quota.ko: quota.c proc.c
 	@echo Compiling for kernel $(KVERSION)
 	make -C $(KDIR) M=$(CURDIR) modules CONFIG_DEBUG_INFO=y
 	@touch $@
