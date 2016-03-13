@@ -28,7 +28,7 @@ int zfsquota_get_dqblk(struct super_block *sb, int type,
 {
 	void *zfs_handle = sb->s_op->get_quota_root(sb)->i_sb->s_fs_info;
 
-	printk("%s\n", __func__);
+	//printk("%s\n", __func__);
 
 	memset(di, 0, sizeof(*di));
 

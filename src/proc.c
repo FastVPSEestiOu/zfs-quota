@@ -82,8 +82,7 @@ static int read_proc_quotafile(char *page, off_t off, int count,
 	blk_num = off / sizeof(struct v1_disk_dqblk);
 
 	while (buf_size > 0) {
-		printk("buf_size = %lu, buf_off = %lu, blk_num = %lu\n",
-		       buf_size, buf_off, blk_num);
+		//printk("buf_size = %lu, buf_off = %lu, blk_num = %lu\n", buf_size, buf_off, blk_num);
 
 		res = read_v1_disk_dqblk(sb, tmp, type, blk_num);
 		if (res < 0)
