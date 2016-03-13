@@ -169,7 +169,7 @@ static int cb_print_value(uint64_t rid, uint64_t space, void *data)
 
 int spam_zfs_quota(struct super_block *zfs_sb)
 {
-	uint64_t i;
+	uint64_t i = 0;
 	return zfsquota_query_many(zfs_sb->s_fs_info, ZFS_PROP_GROUPUSED,
 				   cb_print_value, &i);
 }
