@@ -33,12 +33,15 @@ struct zfs_handle_data *zfsquota_get_data(void *zfs_handle)
 int zfsquota_fill_quotadata(void *zfs_handle, struct quota_data *quota_data,
 			    int type, qid_t id);
 
-struct quota_data *zfsquota_get_quotadata(void *zfs_handle, int type, qid_t id,
-					  int update)
+struct quota_data *zfsquota_tree_get_quota_data(void *zfs_handle, int type,
+						qid_t id, int *new)
 {
 	struct zfs_handle_data *handle_data = zfsquota_get_data(zfs_handle);
 	struct quota_data *quota_data;
 	struct radix_tree_root *quota_tree_root;
+
+	if (new)
+		*new = 0;
 
 	if (handle_data == NULL)
 		return NULL;
@@ -50,18 +53,31 @@ struct quota_data *zfsquota_get_quotadata(void *zfs_handle, int type, qid_t id,
 	quota_data = radix_tree_lookup(quota_tree_root, id);
 	rcu_read_unlock();
 
-	if (quota_data && !update)
-		return quota_data;
-
 	if (quota_data == NULL) {
 		quota_data = kmem_cache_zalloc(quota_data_cachep, GFP_KERNEL);
-		update = 0;
+		if (new)
+			*new = 1;
+		radix_tree_insert(quota_tree_root, id, quota_data);
 	}
 
-	if (zfsquota_fill_quotadata(zfs_handle, quota_data, type, id)) {
+	return quota_data;
+}
+
+struct quota_data *zfsquota_get_quotadata(void *zfs_handle, int type, qid_t id,
+					  int update)
+{
+	struct quota_data *quota_data;
+	int new;
+
+	quota_data = zfsquota_tree_get_quota_data(zfs_handle, type, id, &new);
+
+	if ((new || update) &&
+	    zfsquota_fill_quotadata(zfs_handle, quota_data, type, id)) {
+#if 0
 		kmem_cache_free(quota_data_cachep, quota_data);
 		/* FIXME should do locking here */
 		radix_tree_delete(quota_tree_root, id);
+#endif
 		return NULL;
 	}
 
