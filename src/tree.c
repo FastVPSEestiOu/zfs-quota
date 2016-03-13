@@ -4,6 +4,7 @@
 #include <linux/quota.h>
 #include <linux/slab.h>
 
+#include "zfs.h"
 #include "tree.h"
 
 struct radix_tree_root zfs_handle_data_tree;
