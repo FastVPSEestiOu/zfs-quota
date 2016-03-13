@@ -5,6 +5,7 @@
 #include <linux/slab.h>
 
 #include "zfs.h"
+#include "radix-tree-iter.h"
 #include "tree.h"
 
 struct radix_tree_root zfs_handle_data_tree;
@@ -38,13 +39,16 @@ int zqtree_init_superblock(struct super_block *sb)
 	return 0;
 }
 
+int zqtree_radix_tree_destroy(struct radix_tree_root *root);
 int zqtree_free_superblock(struct super_block *sb)
 {
 	struct zfs_handle_data *data;
 
 	data = radix_tree_delete(&zfs_handle_data_tree, (unsigned long)sb);
 
-	/* FIXME free the trees first */
+	zqtree_radix_tree_destroy(&data->user_quota_tree);
+	zqtree_radix_tree_destroy(&data->group_quota_tree);
+
 	kfree(data);
 
 	return 0;
@@ -111,6 +115,59 @@ struct quota_data *zqtree_get_quota_data(void *sb, int type, qid_t id,
 	return quota_data;
 }
 
+int zqtree_print_tree(void *sb, int type)
+{
+	struct zfs_handle_data *handle_data = zqtree_get_zfs_data(sb);
+	struct radix_tree_root *quota_tree_root;
+	radix_tree_iter_t iter;
+	struct quota_data *qd;
+
+	if (handle_data == NULL)
+		return 0;
+
+	quota_tree_root = type == USRQUOTA ? &handle_data->user_quota_tree
+	    : &handle_data->group_quota_tree;
+
+	for (radix_tree_iter_start(&iter, quota_tree_root, 0);
+	     (qd = radix_tree_iter_item(&iter));
+	     radix_tree_iter_next(&iter, qd->qid)) {
+
+		printk("qd = %p, qd->qid = %Lu, qd->space_used = %Lu\n",
+		       qd, qd->qid, qd->space_used);
+	}
+
+	return 0;
+}
+
+int zqtree_radix_tree_destroy(struct radix_tree_root *root)
+{
+	radix_tree_iter_t iter;
+	struct quota_data *qd;
+
+	for (radix_tree_iter_start(&iter, root, 0);
+	     (qd = radix_tree_iter_item(&iter));
+	     radix_tree_iter_next(&iter, qd->qid)) {
+		kmem_cache_free(quota_data_cachep, qd);
+		radix_tree_delete(root, qd->qid);
+	}
+
+	return 0;
+}
+
+int zqtree_free_tree(void *sb, int type)
+{
+	struct zfs_handle_data *handle_data = zqtree_get_zfs_data(sb);
+	struct radix_tree_root *quota_tree_root;
+
+	if (handle_data == NULL)
+		return 0;
+
+	quota_tree_root = type == USRQUOTA ? &handle_data->user_quota_tree
+	    : &handle_data->group_quota_tree;
+
+	return zqtree_radix_tree_destroy(quota_tree_root);
+}
+
 int zqtree_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
 {
 	struct quota_data *quota_data;
@@ -151,5 +208,4 @@ int __init zfsquota_tree_init(void)
 void __exit zfsquota_tree_exit(void)
 {
 	kmem_cache_destroy(quota_data_cachep);
-	WARN(1, "Forgot to destroy the tree!");
 }

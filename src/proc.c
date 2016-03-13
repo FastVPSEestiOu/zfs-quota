@@ -124,6 +124,8 @@ static inline void zfs_aquot_setidev(struct inode *inode, dev_t dev)
 	PROC_I(inode)->op.proc_get_link = (void *)(unsigned long)dev;
 }
 
+int zqtree_print_tree(void *sb, int type);
+
 static ssize_t zfs_aquotf_read(struct file *file,
 			       char __user * buf, size_t size, loff_t * ppos)
 {
@@ -174,6 +176,8 @@ static ssize_t zfs_aquotf_read(struct file *file,
 		*ppos += l;
 		l = l2 = 0;
 	}
+
+	//zqtree_print_tree(sb, type);
 
 	free_page((unsigned long)page);
 	if (copied)
