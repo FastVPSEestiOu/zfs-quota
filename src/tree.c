@@ -16,6 +16,12 @@ struct zfs_handle_data *zfsquota_get_data(void *zfs_handle)
 	data = radix_tree_lookup(&zfs_handle_data_tree, (long)zfs_handle);
 	rcu_read_unlock();
 
+	if (data == NULL) {
+		data = kzalloc(sizeof(struct zfs_handle_data), GFP_KERNEL);
+		radix_tree_insert(&zfs_handle_data_tree, (long)zfs_handle,
+				  data);
+	}
+
 	return data;
 }
 
