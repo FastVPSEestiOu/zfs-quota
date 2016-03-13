@@ -8,12 +8,6 @@
 
 #include <linux/quotaops.h>
 
-#if 1
-#warning "TODO: 1. iterators for both radix_tree and zfs_props (callbacks are too slow) " \
-       "2. move from zfs_handle to simfs' super_block (due to simfs freeing quota after " \
-       "     removing root)"
-#endif
-
 #include "tree.h"
 
 static int zfsquota_on(struct super_block *sb, int type, int id, char *name,
