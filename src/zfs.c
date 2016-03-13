@@ -14,6 +14,8 @@ int zfsquota_fill_quotadata(void *zfs_handle, struct quota_data *quota_data,
 	int err;
 	uint64_t rid = id;
 
+	quota_data->id = id;
+
 	err = zfs_userspace_one(zfs_handle,
 				type ==
 				USRQUOTA ? ZFS_PROP_USERUSED :

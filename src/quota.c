@@ -8,6 +8,8 @@
 
 #include <linux/quotaops.h>
 
+#include "tree.h"
+
 static int zfsquota_on(struct super_block *sb, int type, int id, char *name,
 		       int remount)
 {
@@ -21,14 +23,12 @@ static int zfsquota_off(struct super_block *sb, int type, int remount)
 	return 0;
 }
 
-int zfsquota_get_quota_dqblk(void *zfs_handle, int type, int id,
-			     struct if_dqblk *di);
 int zfsquota_get_dqblk(struct super_block *sb, int type,
 		       qid_t id, struct if_dqblk *di)
 {
 	void *zfs_handle = sb->s_op->get_quota_root(sb)->i_sb->s_fs_info;
 
-	//printk("%s\n", __func__);
+	printk("%s\n", __func__);
 
 	memset(di, 0, sizeof(*di));
 

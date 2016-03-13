@@ -8,6 +8,11 @@
 struct radix_tree_root zfs_handle_data_tree;
 struct kmem_cache *quota_data_cachep = NULL;
 
+struct zfs_handle_data {
+	struct radix_tree_root user_quota_tree;
+	struct radix_tree_root group_quota_tree;
+};
+
 struct zfs_handle_data *zfsquota_get_data(void *zfs_handle)
 {
 	struct zfs_handle_data *data = NULL;

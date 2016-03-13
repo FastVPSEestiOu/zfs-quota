@@ -2,11 +2,6 @@
 #ifndef TREE_H_INCLUDED
 #define TREE_H_INCLUDED
 
-struct zfs_handle_data {
-	struct radix_tree_root user_quota_tree;
-	struct radix_tree_root group_quota_tree;
-};
-
 struct quota_data {
 	qid_t qid;
 	uint32_t valid;
@@ -15,5 +10,10 @@ struct quota_data {
 	uint64_t obj_used, obj_quota;
 #endif				/* USEROBJ_QUOTA */
 };
+
+struct quota_data *zfsquota_get_quotadata(void *zfs_handle, int type, qid_t id,
+					  int update);
+int zfsquota_get_quota_dqblk(void *zfs_handle, int type, qid_t id,
+			     struct if_dqblk *di);
 
 #endif /* TREE_H_INCLUDED */

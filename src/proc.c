@@ -8,6 +8,8 @@
 #include <linux/uaccess.h>
 #include <linux/ctype.h>
 
+#include "tree.h"
+
 #define DQBLOCK_SIZE 1024
 
 static const char aquota_user[] = "quota.user";
@@ -15,9 +17,6 @@ static const char aquota_group[] = "quota.group";
 static struct proc_dir_entry *glob_zfsquota_proc;
 
 extern struct quotactl_ops zfsquota_q_cops;
-
-int zfsquota_get_dqblk(struct super_block *sb, int type,
-		       qid_t id, struct if_dqblk *di);
 
 struct v1_disk_dqblk {
 	__u32 dqb_bhardlimit;	/* absolute limit on disk blks alloc */
@@ -30,36 +29,31 @@ struct v1_disk_dqblk {
 	time_t dqb_itime;	/* time limit for excessive inode use */
 };
 
-/* TODO refactor this extracting the body from zfsquota_get_dqblk
- * and share it with this one so zfs_sb could be re-used */
-static int read_v1_disk_dqblk(struct super_block *sb, void *buf, int type,
-			      qid_t qid)
+static int read_v1_disk_dqblk(void *zfs_handle, void *buf, int type, qid_t qid)
 {
-	struct if_dqblk dqblk;
-	struct v1_disk_dqblk *v1_dqblk = buf;
+	struct v1_disk_dqblk *v1 = buf;
+	struct quota_data *quota_data;
 
-#if 1
-	if (zfsquota_get_dqblk(sb, type, qid, &dqblk))
+	quota_data = zfsquota_get_quotadata(zfs_handle, type, qid, 0);
+	if (!quota_data)
 		return -EIO;
+
+	v1->dqb_bsoftlimit = v1->dqb_bhardlimit = quota_data->space_quota;
+	v1->dqb_curblocks = quota_data->space_used;
+#ifdef USEROBJ_QUOTA
+	v1->dqb_ihardlimit = v1->dqb_isoftlimit = quota_data->obj_quota;
+	v1->dqb_curinodes = quota_data->obj_used;
 #endif
+	v1->dqb_btime = v1->dqb_itime = 0;
 
-	v1_dqblk->dqb_bhardlimit = dqblk.dqb_bhardlimit;
-	v1_dqblk->dqb_bsoftlimit = dqblk.dqb_bsoftlimit;
-	v1_dqblk->dqb_curblocks = dqblk.dqb_curspace / DQBLOCK_SIZE;
-	v1_dqblk->dqb_ihardlimit = dqblk.dqb_ihardlimit;
-	v1_dqblk->dqb_isoftlimit = dqblk.dqb_isoftlimit;
-	v1_dqblk->dqb_curinodes = dqblk.dqb_curinodes;
-	v1_dqblk->dqb_btime = dqblk.dqb_btime;
-	v1_dqblk->dqb_itime = dqblk.dqb_itime;
-
-	return sizeof(*v1_dqblk);
+	return sizeof(*v1);
 }
 
 /*
  * FIXME: this function can handle quota files up to 2GB only.
  */
 static int read_proc_quotafile(char *page, off_t off, int count,
-			       struct super_block *sb, int type)
+			       void *zfs_handle, int type)
 {
 	off_t blk_num, buf_off;
 	char *tmp;
@@ -84,7 +78,7 @@ static int read_proc_quotafile(char *page, off_t off, int count,
 	while (buf_size > 0) {
 		//printk("buf_size = %lu, buf_off = %lu, blk_num = %lu\n", buf_size, buf_off, blk_num);
 
-		res = read_v1_disk_dqblk(sb, tmp, type, blk_num);
+		res = read_v1_disk_dqblk(zfs_handle, tmp, type, blk_num);
 		if (res < 0)
 			goto out_dq;
 		memcpy(page + buf_off, tmp,
@@ -137,6 +131,7 @@ static ssize_t zfs_aquotf_read(struct file *file,
 	struct inode *inode;
 	struct block_device *bdev;
 	struct super_block *sb;
+	void *zfs_handle;
 	int err, type;
 	printk("%s\n", __func__);
 
@@ -156,6 +151,7 @@ static ssize_t zfs_aquotf_read(struct file *file,
 	if (sb == NULL)
 		goto out_err;
 	drop_super(sb);
+	zfs_handle = sb->s_op->get_quota_root(sb)->i_sb->s_fs_info;
 
 	copied = 0;
 	l = l2 = 0;
@@ -164,7 +160,7 @@ static ssize_t zfs_aquotf_read(struct file *file,
 		if (bufsize <= 0)
 			break;
 
-		l = read_proc_quotafile(page, *ppos, bufsize, sb, type);
+		l = read_proc_quotafile(page, *ppos, bufsize, zfs_handle, type);
 		if (l <= 0)
 			break;
 
