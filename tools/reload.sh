@@ -12,5 +12,5 @@ vzctl start 1001
 sleep 1
 #vzctl exec 1001 strace /quotactl_ex
 vzctl exec 1001 ls /proc/vz/zfsquota/ -R
-vzctl exec 1001 repquota -a
-vzctl exec 1001 repquota -ag
+vzctl exec 1001 repquota -an
+vzctl exec 1001 repquota -agn
