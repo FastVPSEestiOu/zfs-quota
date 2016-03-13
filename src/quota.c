@@ -141,6 +141,7 @@ struct vnotifier_block zfsquota_notifier_block = {
 int __init zfsquota_proc_init(void);
 void __exit zfsquota_proc_exit(void);
 int __init zfsquota_tree_init(void);
+int __init zfsquota_tree_exit(void);
 
 static int __init zfsquota_init(void)
 {
@@ -156,6 +157,7 @@ static int __init zfsquota_init(void)
 static void __exit zfsquota_exit(void)
 {
 	zfsquota_proc_exit();
+	zfsquota_tree_exit();
 	virtinfo_notifier_unregister(VITYPE_QUOTA, &zfsquota_notifier_block);
 
 	unregister_quota_format(&zfs_quota_empty_v2_format);
