@@ -1,8 +1,8 @@
 
 obj-m = zfs-quota.o
-zfs-quota-y := quota.o proc.o zfs.o
+zfs-quota-y := quota.o proc.o tree.o zfs.o
 ccflags-y := -I/opt/zfs/src/spl-0.6.5/include
-ccflags-y += -DHAVE_USLEEP_RANGE=1
+ccflags-y += -DHAVE_USLEEP_RANGE=1 -DUSEROBJ_QUOTA
 ccflags-y += -I/opt/zfs/src/zfs-0.6.5/include
 ccflags-y += -I/usr/local/src/spl-0.6.5/include
 ccflags-y += -I/usr/local/src/zfs-0.6.5/include
