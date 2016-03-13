@@ -1,0 +1,7 @@
+*.[oa]
+*.mod.[oc]
+*.ko*
+.*
+!.gitignore
+src/Module.symvers
+src/modules.order
