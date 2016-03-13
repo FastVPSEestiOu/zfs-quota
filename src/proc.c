@@ -12,8 +12,10 @@
 
 #define DQBLOCK_SIZE 1024
 
-static const char aquota_user[] = "quota.user";
-static const char aquota_group[] = "quota.group";
+static const char quota_user[] = "quota.user";
+static const char quota_group[] = "quota.group";
+static const char aquota_user[] = "aquota.user";
+static const char aquota_group[] = "aquota.group";
 static struct proc_dir_entry *glob_zfsquota_proc;
 
 extern struct quotactl_ops zfsquota_q_cops;
@@ -29,12 +31,12 @@ struct v1_disk_dqblk {
 	time_t dqb_itime;	/* time limit for excessive inode use */
 };
 
-static int read_v1_disk_dqblk(void *zfs_handle, void *buf, int type, qid_t qid)
+static int read_v1_disk_dqblk(void *sb, void *buf, int type, qid_t qid)
 {
 	struct v1_disk_dqblk *v1 = buf;
 	struct quota_data *quota_data;
 
-	quota_data = zfsquota_get_quotadata(zfs_handle, type, qid, 0);
+	quota_data = zqtree_get_quota_data(sb, type, qid, 0);
 	if (!quota_data)
 		return -EIO;
 
@@ -53,7 +55,7 @@ static int read_v1_disk_dqblk(void *zfs_handle, void *buf, int type, qid_t qid)
  * FIXME: this function can handle quota files up to 2GB only.
  */
 static int read_proc_quotafile(char *page, off_t off, int count,
-			       void *zfs_handle, int type)
+			       void *sb, int type)
 {
 	off_t blk_num, buf_off;
 	char *tmp;
@@ -78,7 +80,7 @@ static int read_proc_quotafile(char *page, off_t off, int count,
 	while (buf_size > 0) {
 		//printk("buf_size = %lu, buf_off = %lu, blk_num = %lu\n", buf_size, buf_off, blk_num);
 
-		res = read_v1_disk_dqblk(zfs_handle, tmp, type, blk_num);
+		res = read_v1_disk_dqblk(sb, tmp, type, blk_num);
 		if (res < 0)
 			goto out_dq;
 		memcpy(page + buf_off, tmp,
@@ -131,7 +133,6 @@ static ssize_t zfs_aquotf_read(struct file *file,
 	struct inode *inode;
 	struct block_device *bdev;
 	struct super_block *sb;
-	void *zfs_handle;
 	int err, type;
 	printk("%s\n", __func__);
 
@@ -151,7 +152,6 @@ static ssize_t zfs_aquotf_read(struct file *file,
 	if (sb == NULL)
 		goto out_err;
 	drop_super(sb);
-	zfs_handle = sb->s_op->get_quota_root(sb)->i_sb->s_fs_info;
 
 	copied = 0;
 	l = l2 = 0;
@@ -160,7 +160,7 @@ static ssize_t zfs_aquotf_read(struct file *file,
 		if (bufsize <= 0)
 			break;
 
-		l = read_proc_quotafile(page, *ppos, bufsize, zfs_handle, type);
+		l = read_proc_quotafile(page, *ppos, bufsize, sb, type);
 		if (l <= 0)
 			break;
 
@@ -222,14 +222,14 @@ static int zfs_aquotq_readdir(struct file *file, void *data, filldir_t filler)
 					 parent_ino(file->f_dentry), DT_DIR);
 			break;
 		case 2:
-			err = (*filler) (data, aquota_user,
-					 sizeof(aquota_user) - 1, n,
+			err = (*filler) (data, quota_user,
+					 sizeof(quota_user) - 1, n,
 					 file->f_dentry->d_inode->i_ino
 					 + USRQUOTA + 1, DT_REG);
 			break;
 		case 3:
-			err = (*filler) (data, aquota_group,
-					 sizeof(aquota_group) - 1, n,
+			err = (*filler) (data, quota_group,
+					 sizeof(quota_group) - 1, n,
 					 file->f_dentry->d_inode->i_ino
 					 + GRPQUOTA + 1, DT_REG);
 			break;
@@ -245,7 +245,6 @@ out:
 struct zfs_aquotq_lookdata {
 	dev_t dev;
 	int type;
-	struct vz_quota_master *qmblk;
 };
 
 static int zfs_aquotq_looktest(struct inode *inode, void *data)
@@ -295,14 +294,14 @@ static struct dentry *zfs_aquotq_lookup(struct inode *dir,
 	int k;
 	printk("%s\n", __func__);
 
-	if (dentry->d_name.len == sizeof(aquota_user) - 1) {
-		if (memcmp(dentry->d_name.name, aquota_user,
-			   sizeof(aquota_user) - 1))
+	if (dentry->d_name.len == sizeof(quota_user) - 1) {
+		if (memcmp(dentry->d_name.name, quota_user,
+			   sizeof(quota_user) - 1))
 			goto out;
 		k = USRQUOTA;
-	} else if (dentry->d_name.len == sizeof(aquota_group) - 1) {
-		if (memcmp(dentry->d_name.name, aquota_group,
-			   sizeof(aquota_group) - 1))
+	} else if (dentry->d_name.len == sizeof(quota_group) - 1) {
+		if (memcmp(dentry->d_name.name, quota_group,
+			   sizeof(quota_group) - 1))
 			goto out;
 		k = GRPQUOTA;
 	} else

@@ -1,4 +1,5 @@
 
+#include <linux/fs.h>
 #include <linux/radix-tree.h>
 #include <linux/quota.h>
 #include <linux/slab.h>
@@ -9,34 +10,57 @@ struct radix_tree_root zfs_handle_data_tree;
 struct kmem_cache *quota_data_cachep = NULL;
 
 struct zfs_handle_data {
+	void *zfs_handle;
 	struct radix_tree_root user_quota_tree;
 	struct radix_tree_root group_quota_tree;
 };
 
-struct zfs_handle_data *zfsquota_get_data(void *zfs_handle)
+int zqtree_init_superblock(struct super_block *sb)
 {
 	struct zfs_handle_data *data = NULL;
 
 	rcu_read_lock();
-	data = radix_tree_lookup(&zfs_handle_data_tree, (long)zfs_handle);
+	data = radix_tree_delete(&zfs_handle_data_tree, (unsigned long)sb);
 	rcu_read_unlock();
 
-	if (data == NULL) {
-		data = kzalloc(sizeof(struct zfs_handle_data), GFP_KERNEL);
-		radix_tree_insert(&zfs_handle_data_tree, (long)zfs_handle,
-				  data);
+	if (data) {
+		WARN(1, "simfs sb = %p was registered already, freeing", sb);
+		/* FIXME free the trees first */
+		kfree(data);
 	}
 
-	return data;
+	data = kzalloc(sizeof(struct zfs_handle_data), GFP_KERNEL);
+	data->zfs_handle = sb->s_op->get_quota_root(sb)->i_sb->s_fs_info;
+
+	radix_tree_insert(&zfs_handle_data_tree, (unsigned long)sb, data);
+
+	return 0;
+}
+
+int zqtree_free_superblock(struct super_block *sb)
+{
+	struct zfs_handle_data *data;
+
+	data = radix_tree_delete(&zfs_handle_data_tree, (unsigned long)sb);
+
+	/* FIXME free the trees first */
+	kfree(data);
+
+	return 0;
+}
+
+static inline struct zfs_handle_data *zqtree_get_zfs_data(void *sb)
+{
+	return radix_tree_lookup(&zfs_handle_data_tree, (unsigned long)sb);
 }
 
 int zfsquota_fill_quotadata(void *zfs_handle, struct quota_data *quota_data,
 			    int type, qid_t id);
 
-struct quota_data *zfsquota_tree_get_quota_data(void *zfs_handle, int type,
-						qid_t id, int *new)
+struct quota_data *zqtree_lookup_quota_data(void *sb, int type,
+					    qid_t id, int *new)
 {
-	struct zfs_handle_data *handle_data = zfsquota_get_data(zfs_handle);
+	struct zfs_handle_data *handle_data = zqtree_get_zfs_data(sb);
 	struct quota_data *quota_data;
 	struct radix_tree_root *quota_tree_root;
 
@@ -63,16 +87,18 @@ struct quota_data *zfsquota_tree_get_quota_data(void *zfs_handle, int type,
 	return quota_data;
 }
 
-struct quota_data *zfsquota_get_quotadata(void *zfs_handle, int type, qid_t id,
-					  int update)
+struct quota_data *zqtree_get_quota_data(void *sb, int type, qid_t id,
+					 int update)
 {
+	struct zfs_handle_data *handle_data = zqtree_get_zfs_data(sb);
 	struct quota_data *quota_data;
 	int new;
 
-	quota_data = zfsquota_tree_get_quota_data(zfs_handle, type, id, &new);
+	quota_data = zqtree_lookup_quota_data(sb, type, id, &new);
 
 	if ((new || update) &&
-	    zfsquota_fill_quotadata(zfs_handle, quota_data, type, id)) {
+	    zfsquota_fill_quotadata(handle_data->zfs_handle, quota_data, type,
+				    id)) {
 #if 0
 		kmem_cache_free(quota_data_cachep, quota_data);
 		/* FIXME should do locking here */
@@ -84,12 +110,11 @@ struct quota_data *zfsquota_get_quotadata(void *zfs_handle, int type, qid_t id,
 	return quota_data;
 }
 
-int zfsquota_get_quota_dqblk(void *zfs_handle, int type, qid_t id,
-			     struct if_dqblk *di)
+int zqtree_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
 {
 	struct quota_data *quota_data;
 
-	quota_data = zfsquota_get_quotadata(zfs_handle, type, id, 0);
+	quota_data = zqtree_get_quota_data(sb, type, id, 0);
 
 	if (!quota_data)
 		return -EIO;	/* FIXME */

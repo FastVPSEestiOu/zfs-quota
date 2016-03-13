@@ -11,9 +11,11 @@ struct quota_data {
 #endif				/* USEROBJ_QUOTA */
 };
 
-struct quota_data *zfsquota_get_quotadata(void *zfs_handle, int type, qid_t id,
-					  int update);
-int zfsquota_get_quota_dqblk(void *zfs_handle, int type, qid_t id,
-			     struct if_dqblk *di);
+struct quota_data *zqtree_get_quota_data(void *sb, int type, qid_t id,
+					 int update);
+int zqtree_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di);
+
+int zqtree_init_superblock(struct super_block *sb);
+int zqtree_free_superblock(struct super_block *sb);
 
 #endif /* TREE_H_INCLUDED */

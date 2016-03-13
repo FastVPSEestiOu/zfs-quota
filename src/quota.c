@@ -8,6 +8,12 @@
 
 #include <linux/quotaops.h>
 
+#if 1
+#warning "TODO: 1. iterators for both radix_tree and zfs_props (callbacks are too slow) " \
+       "2. move from zfs_handle to simfs' super_block (due to simfs freeing quota after " \
+       "     removing root)"
+#endif
+
 #include "tree.h"
 
 static int zfsquota_on(struct super_block *sb, int type, int id, char *name,
@@ -26,13 +32,11 @@ static int zfsquota_off(struct super_block *sb, int type, int remount)
 int zfsquota_get_dqblk(struct super_block *sb, int type,
 		       qid_t id, struct if_dqblk *di)
 {
-	void *zfs_handle = sb->s_op->get_quota_root(sb)->i_sb->s_fs_info;
-
 	printk("%s\n", __func__);
 
 	memset(di, 0, sizeof(*di));
 
-	return zfsquota_get_quota_dqblk(zfs_handle, type, id, di);
+	return zqtree_get_quota_dqblk(sb, type, id, di);
 }
 
 static int zfsquota_set_dqblk(struct super_block *sb, int type,
@@ -91,44 +95,49 @@ struct quota_format_type zfs_quota_empty_v2_format = {
 	.qf_owner = THIS_MODULE,
 };
 
+static int zfsquota_notify_quota_on(struct super_block *sb)
+{
+	if (strcmp(sb->s_op->get_quota_root(sb)->i_sb->s_type->name, "zfs")) {
+		return NOTIFY_OK;
+	}
+	if (!try_module_get(THIS_MODULE))
+		return NOTIFY_BAD;
+
+	sb->s_qcop = &zfsquota_q_cops;
+	sb->s_dquot.flags = dquot_state_flag(DQUOT_USAGE_ENABLED, USRQUOTA) |
+	    dquot_state_flag(DQUOT_USAGE_ENABLED, GRPQUOTA);
+	sb->s_dquot.info[USRQUOTA].dqi_format = &zfs_quota_empty_v2_format;
+	sb->s_dquot.info[GRPQUOTA].dqi_format = &zfs_quota_empty_v2_format;
+
+	if (zqtree_init_superblock(sb))
+		return NOTIFY_BAD;
+
+	return NOTIFY_OK;
+}
+
+static int zfsquota_notify_quota_off(struct super_block *sb)
+{
+	if (sb->s_qcop != &zfsquota_q_cops) {
+		return NOTIFY_OK;
+	}
+	zqtree_free_superblock(sb);
+	module_put(THIS_MODULE);
+
+	return NOTIFY_OK;
+}
+
 static int zfsquota_notifier_call(struct vnotifier_block *self,
 				  unsigned long n, void *data, int err)
 {
 	struct virt_info_quota *viq = (struct virt_info_quota *)data;
-	struct super_block *sb;
 
 	switch (n) {
 	case VIRTINFO_QUOTA_ON:
-		err = NOTIFY_BAD;
-		sb = viq->super;
-		if (strcmp
-		    (sb->s_op->get_quota_root(sb)->i_sb->s_type->name, "zfs")) {
-			err = NOTIFY_OK;
-			break;
-		}
-		if (!try_module_get(THIS_MODULE))
-			break;
-
-		sb->s_qcop = &zfsquota_q_cops;
-		sb->s_dquot.flags =
-		    dquot_state_flag(DQUOT_USAGE_ENABLED,
-				     USRQUOTA) |
-		    dquot_state_flag(DQUOT_USAGE_ENABLED, GRPQUOTA);
-		sb->s_dquot.info[USRQUOTA].dqi_format =
-		    &zfs_quota_empty_v2_format;
-		sb->s_dquot.info[GRPQUOTA].dqi_format =
-		    &zfs_quota_empty_v2_format;
-		err = NOTIFY_OK | NOTIFY_STOP_MASK;
+		err = zfsquota_notify_quota_on(viq->super);
 		break;
 	case VIRTINFO_QUOTA_OFF:
-		err = NOTIFY_BAD;
-		sb = viq->super;
-		if (sb->s_qcop != &zfsquota_q_cops) {
-			err = NOTIFY_OK;
-			break;
-		}
-		module_put(THIS_MODULE);
-		err = NOTIFY_OK;
+		err = zfsquota_notify_quota_off(viq->super);
+		break;
 	}
 	return err;
 }
