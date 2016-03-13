@@ -4,7 +4,7 @@
 
 struct quota_data {
 	qid_t qid;
-	uint32_t valid;
+	uint32_t version;
 	uint64_t space_used, space_quota;
 #ifdef USEROBJ_QUOTA
 	uint64_t obj_used, obj_quota;

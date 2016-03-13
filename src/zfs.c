@@ -62,17 +62,6 @@ no_obj_quota:
 
 #define ZFS_PROP_ITER_BUFSIZE (sizeof(zfs_useracct_t) * 128)
 
-struct zfs_prop_iter {
-	void *zfs_handle;
-	int prop;
-
-	void *buf;
-	uint64_t bufsize, retsize, offset;
-	uint64_t cookie;
-	zfs_prop_pair_t pair;
-	int error;
-};
-
 static int zfs_prop_iter_next_call(zfs_prop_iter_t * iter)
 {
 	iter->retsize = iter->bufsize;
@@ -109,6 +98,14 @@ void zfs_prop_iter_start(void *zfs_handle, int prop, zfs_prop_iter_t * iter)
 	zfs_prop_iter_next_call(iter);
 }
 
+void zfs_prop_iter_reset(int prop, zfs_prop_iter_t * iter)
+{
+	iter->prop = prop;
+	iter->cookie = 0;
+
+	zfs_prop_iter_next_call(iter);
+}
+
 zfs_prop_pair_t *zfs_prop_iter_item(zfs_prop_iter_t * iter)
 {
 	zfs_useracct_t *buf;
@@ -140,36 +137,4 @@ void zfs_prop_iter_next(zfs_prop_iter_t * iter)
 int zfs_prop_iter_error(zfs_prop_iter_t * iter)
 {
 	return iter->error;
-}
-
-typedef int fillinfo_t(uint64_t qid, uint64_t value, void *data);
-
-int zfsquota_query_many(void *zfs_handle, int prop, fillinfo_t cb, void *cbdata)
-{
-	zfs_prop_iter_t iter;
-	zfs_prop_pair_t *pair;
-
-	for (zfs_prop_iter_start(zfs_handle, prop, &iter);
-	     (pair = zfs_prop_iter_item(&iter)); zfs_prop_iter_next(&iter)) {
-		if (cb(pair->rid, pair->value, cbdata))
-			break;
-	}
-
-	zfs_prop_iter_stop(&iter);
-	return zfs_prop_iter_error(&iter);
-}
-
-static int cb_print_value(uint64_t rid, uint64_t space, void *data)
-{
-	uint64_t *pi = data;
-	printk("rid = %Lu, space = %Lu, *pi = %Lu\n", rid, space, *pi);
-	(*pi)++;
-	return 0;
-}
-
-int spam_zfs_quota(struct super_block *zfs_sb)
-{
-	uint64_t i = 0;
-	return zfsquota_query_many(zfs_sb->s_fs_info, ZFS_PROP_GROUPUSED,
-				   cb_print_value, &i);
 }

@@ -44,6 +44,7 @@ static int zfsquota_get_info(struct super_block *sb, int type,
 			     struct if_dqinfo *ii)
 {
 	printk("%s\n", __func__);
+	memset(ii, 0, sizeof(*ii));
 	return 0;
 }
 
@@ -61,12 +62,16 @@ static int zfsquota_get_quoti(struct super_block *sb, int type, qid_t idx,
 	return 0;
 }
 
-void spam_zfs_quota(struct super_block *zfs_sb);
+int zqtree_zfs_sync_tree(void *sb, int type);
 
 static int zfsquota_sync(struct super_block *sb, int type)
 {
 	printk("%s\n", __func__);
-	spam_zfs_quota(sb->s_op->get_quota_root(sb)->i_sb);
+	if (type == -1) {
+		zqtree_zfs_sync_tree(sb, USRQUOTA);
+		zqtree_zfs_sync_tree(sb, GRPQUOTA);
+	} else
+		zqtree_zfs_sync_tree(sb, type);
 	return 0;
 }
 
