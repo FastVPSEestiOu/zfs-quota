@@ -5,3 +5,4 @@
 !.gitignore
 src/Module.symvers
 src/modules.order
+tags
