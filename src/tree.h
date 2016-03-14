@@ -14,6 +14,10 @@ struct quota_data {
 struct quota_data *zqtree_get_quota_data(void *sb, int type, qid_t id,
 					 int update);
 int zqtree_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di);
+struct radix_tree_root *zqtree_get_tree_for_type(void *sb, int type);
+
+int zqtree_print_tree(struct radix_tree_root *root);
+int zqtree_print_tree_sb_type(void *sb, int type);
 
 int zqtree_init_superblock(struct super_block *sb);
 int zqtree_free_superblock(struct super_block *sb);

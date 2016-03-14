@@ -116,18 +116,21 @@ struct quota_data *zqtree_get_quota_data(void *sb, int type, qid_t id,
 	return quota_data;
 }
 
-int zqtree_print_tree(void *sb, int type)
+struct radix_tree_root *zqtree_get_tree_for_type(void *sb, int type)
 {
 	struct zfs_handle_data *handle_data = zqtree_get_zfs_data(sb);
-	struct radix_tree_root *quota_tree_root;
-	radix_tree_iter_t iter;
-	struct quota_data *qd;
 
 	if (handle_data == NULL)
-		return 0;
+		return NULL;
 
-	quota_tree_root = type == USRQUOTA ? &handle_data->user_quota_tree
+	return type == USRQUOTA ? &handle_data->user_quota_tree
 	    : &handle_data->group_quota_tree;
+}
+
+int zqtree_print_tree(struct radix_tree_root *quota_tree_root)
+{
+	radix_tree_iter_t iter;
+	struct quota_data *qd;
 
 	for (radix_tree_iter_start(&iter, quota_tree_root, 0);
 	     (qd = radix_tree_iter_item(&iter));
@@ -139,6 +142,16 @@ int zqtree_print_tree(void *sb, int type)
 	}
 
 	return 0;
+}
+
+int zqtree_print_tree_sb_type(void *sb, int type)
+{
+	struct radix_tree_root *quota_tree_root =
+	    zqtree_get_tree_for_type(sb, type);
+	if (!quota_tree_root)
+		return 0;
+
+	return zqtree_print_tree(quota_tree_root);
 }
 
 int zqtree_radix_tree_destroy(struct radix_tree_root *root)
@@ -207,7 +220,6 @@ int zqtree_zfs_sync_tree(void *sb, int type)
 
 	zfs_prop_iter_t iter;
 	zfs_prop_pair_t *pair;
-#warning type ignored
 
 	zfs_prop_iter_start(handle_data->zfs_handle, prop, &iter);
 
@@ -255,7 +267,7 @@ int zqtree_zfs_sync_tree(void *sb, int type)
 
 	if (!err) {
 		printk("tree = %d\n", type);
-		zqtree_print_tree(sb, type);
+		zqtree_print_tree_sb_type(sb, type);
 	}
 
 	return err;

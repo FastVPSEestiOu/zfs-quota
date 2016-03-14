@@ -9,6 +9,7 @@
 #include <linux/ctype.h>
 
 #include "tree.h"
+#include "radix-tree-iter.h"
 
 #define DQBLOCK_SIZE 1024
 
@@ -31,15 +32,9 @@ struct v1_disk_dqblk {
 	time_t dqb_itime;	/* time limit for excessive inode use */
 };
 
-static int read_v1_disk_dqblk(void *sb, void *buf, int type, qid_t qid)
+static int quota_data_to_v1_disk_dqblk(struct quota_data *quota_data,
+				       struct v1_disk_dqblk *v1)
 {
-	struct v1_disk_dqblk *v1 = buf;
-	struct quota_data *quota_data;
-
-	quota_data = zqtree_get_quota_data(sb, type, qid, 0);
-	if (!quota_data)
-		return -EIO;
-
 	v1->dqb_bsoftlimit = v1->dqb_bhardlimit = quota_data->space_quota;
 	v1->dqb_curblocks = quota_data->space_used;
 #ifdef USEROBJ_QUOTA
@@ -51,50 +46,43 @@ static int read_v1_disk_dqblk(void *sb, void *buf, int type, qid_t qid)
 	return sizeof(*v1);
 }
 
+#define V1_DISK_DQBLK_SIZE (sizeof(struct v1_disk_dqblk))
+
 /*
  * FIXME: this function can handle quota files up to 2GB only.
  */
 static int read_proc_quotafile(char *page, off_t off, int count,
-			       void *sb, int type)
+			       struct radix_tree_root *quota_tree_root)
 {
-	off_t blk_num, buf_off;
-	char *tmp;
-	ssize_t buf_size;
+	off_t qid_start, qid_last;
 	int res = 0;
+	radix_tree_iter_t iter;
+	struct quota_data *qd;
 	printk("%s\n", __func__);
 
-	if (off >= 1024 * 40)
+	if (off >= 65536 * 40)
 		return 0;
 
-	tmp = kmalloc(sizeof(struct v1_disk_dqblk), GFP_KERNEL);
-	if (!tmp)
-		return -ENOMEM;
+	memset(page, 0, count);
 
-	buf_off = 0;
-	buf_size =
-	    (count / sizeof(struct v1_disk_dqblk)) *
-	    sizeof(struct v1_disk_dqblk);
+	qid_start = off / V1_DISK_DQBLK_SIZE;
+	qid_last = (off + count) / V1_DISK_DQBLK_SIZE;
 
-	blk_num = off / sizeof(struct v1_disk_dqblk);
+	zqtree_print_tree(quota_tree_root);
 
-	while (buf_size > 0) {
-		//printk("buf_size = %lu, buf_off = %lu, blk_num = %lu\n", buf_size, buf_off, blk_num);
+	for (radix_tree_iter_start(&iter, quota_tree_root, qid_start);
+	     (qd = radix_tree_iter_item(&iter));
+	     radix_tree_iter_next(&iter, qd->qid)) {
 
-		res = read_v1_disk_dqblk(sb, tmp, type, blk_num);
-		if (res < 0)
-			goto out_dq;
-		memcpy(page + buf_off, tmp,
-		       min((size_t) buf_size, (size_t) res));
+		if (qd->qid >= qid_last)
+			break;
 
-		buf_size -= res;
-		buf_off += res;
-
-		blk_num++;
+		quota_data_to_v1_disk_dqblk(qd,
+					    page + (qd->qid -
+						    qid_start) *
+					    V1_DISK_DQBLK_SIZE);
+		res = (qd->qid - qid_start + 1) * V1_DISK_DQBLK_SIZE;
 	}
-	res = buf_off;
-
-out_dq:
-	kfree(tmp);
 
 	return res;
 }
@@ -124,8 +112,6 @@ static inline void zfs_aquot_setidev(struct inode *inode, dev_t dev)
 	PROC_I(inode)->op.proc_get_link = (void *)(unsigned long)dev;
 }
 
-int zqtree_print_tree(void *sb, int type);
-
 static ssize_t zfs_aquotf_read(struct file *file,
 			       char __user * buf, size_t size, loff_t * ppos)
 {
@@ -135,6 +121,7 @@ static ssize_t zfs_aquotf_read(struct file *file,
 	struct inode *inode;
 	struct block_device *bdev;
 	struct super_block *sb;
+	struct radix_tree_root *quota_tree_root;
 	int err, type;
 	printk("%s\n", __func__);
 
@@ -155,6 +142,8 @@ static ssize_t zfs_aquotf_read(struct file *file,
 		goto out_err;
 	drop_super(sb);
 
+	quota_tree_root = zqtree_get_tree_for_type(sb, type);
+
 	copied = 0;
 	l = l2 = 0;
 	while (1) {
@@ -162,7 +151,7 @@ static ssize_t zfs_aquotf_read(struct file *file,
 		if (bufsize <= 0)
 			break;
 
-		l = read_proc_quotafile(page, *ppos, bufsize, sb, type);
+		l = read_proc_quotafile(page, *ppos, bufsize, quota_tree_root);
 		if (l <= 0)
 			break;
 
@@ -176,8 +165,6 @@ static ssize_t zfs_aquotf_read(struct file *file,
 		*ppos += l;
 		l = l2 = 0;
 	}
-
-	//zqtree_print_tree(sb, type);
 
 	free_page((unsigned long)page);
 	if (copied)
