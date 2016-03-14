@@ -59,31 +59,36 @@ static inline struct zfs_handle_data *zqtree_get_zfs_data(void *sb)
 	return radix_tree_lookup(&zfs_handle_data_tree, (unsigned long)sb);
 }
 
-int zfsquota_fill_quotadata(void *zfs_handle, struct quota_data *quota_data,
-			    int type, qid_t id);
-
-struct quota_data *zqtree_lookup_quota_data(void *sb, int type,
-					    qid_t id, int *new)
+struct radix_tree_root *zqtree_get_tree_for_type(void *sb, int type)
 {
 	struct zfs_handle_data *handle_data = zqtree_get_zfs_data(sb);
-	struct quota_data *quota_data;
-	struct radix_tree_root *quota_tree_root;
-
-	if (new)
-		*new = 0;
 
 	if (handle_data == NULL)
 		return NULL;
 
-	quota_tree_root = type == USRQUOTA ? &handle_data->user_quota_tree
+	return type == USRQUOTA ? &handle_data->user_quota_tree
 	    : &handle_data->group_quota_tree;
+}
+
+int zfsquota_fill_quotadata(void *zfs_handle, struct quota_data *quota_data,
+			    int type, qid_t id);
+
+struct quota_data *zqtree_lookup_quota_data(struct radix_tree_root
+					    *quota_tree_root, qid_t id,
+					    int *new)
+{
+	struct quota_data *quota_data;
+
+	if (new)
+		*new = 0;
 
 	rcu_read_lock();
 	quota_data = radix_tree_lookup(quota_tree_root, id);
 	rcu_read_unlock();
 
 	if (quota_data == NULL) {
-		quota_data = kmem_cache_zalloc(quota_data_cachep, GFP_KERNEL);
+		quota_data =
+		    kmem_cache_zalloc(quota_data_cachep, GFP_KERNEL | GFP_NOFS);
 		if (new)
 			*new = 1;
 		radix_tree_insert(quota_tree_root, id, quota_data);
@@ -93,6 +98,19 @@ struct quota_data *zqtree_lookup_quota_data(void *sb, int type,
 	return quota_data;
 }
 
+struct quota_data *zqtree_lookup_quota_data_sb_type(void *sb, int type,
+						    qid_t id, int *new)
+{
+	struct radix_tree_root *quota_tree_root;
+
+	quota_tree_root = zqtree_get_tree_for_type(sb, type);
+
+	if (quota_tree_root == NULL)
+		return NULL;
+
+	return zqtree_lookup_quota_data(quota_tree_root, id, new);
+}
+
 struct quota_data *zqtree_get_quota_data(void *sb, int type, qid_t id,
 					 int update)
 {
@@ -100,7 +118,7 @@ struct quota_data *zqtree_get_quota_data(void *sb, int type, qid_t id,
 	struct quota_data *quota_data;
 	int new;
 
-	quota_data = zqtree_lookup_quota_data(sb, type, id, &new);
+	quota_data = zqtree_lookup_quota_data_sb_type(sb, type, id, &new);
 
 	if ((new || update) &&
 	    zfsquota_fill_quotadata(handle_data->zfs_handle, quota_data, type,
@@ -116,17 +134,6 @@ struct quota_data *zqtree_get_quota_data(void *sb, int type, qid_t id,
 	return quota_data;
 }
 
-struct radix_tree_root *zqtree_get_tree_for_type(void *sb, int type)
-{
-	struct zfs_handle_data *handle_data = zqtree_get_zfs_data(sb);
-
-	if (handle_data == NULL)
-		return NULL;
-
-	return type == USRQUOTA ? &handle_data->user_quota_tree
-	    : &handle_data->group_quota_tree;
-}
-
 int zqtree_print_tree(struct radix_tree_root *quota_tree_root)
 {
 	radix_tree_iter_t iter;
@@ -137,8 +144,15 @@ int zqtree_print_tree(struct radix_tree_root *quota_tree_root)
 	     radix_tree_iter_next(&iter, qd->qid)) {
 
 		printk
-		    ("qd = %p, qd->qid = %u, qd->space_used = %Lu, qd->space_quota = %Lu\n",
-		     qd, qd->qid, qd->space_used, qd->space_quota);
+		    ("qd = %p, { .qid = %u, .space_used = %Lu, .space_quota = %Lu"
+#ifdef USEROBJ_QUOTA
+		     ", .obj_used = %Lu, .obj_quota = %Lu"
+#endif
+		     " }\n", qd, qd->qid, qd->space_used, qd->space_quota,
+#ifdef USEROBJ_QUOTA
+		     qd->obj_used, qd->obj_quota
+#endif
+		    );
 	}
 
 	return 0;
@@ -171,15 +185,9 @@ int zqtree_radix_tree_destroy(struct radix_tree_root *root)
 
 int zqtree_free_tree(void *sb, int type)
 {
-	struct zfs_handle_data *handle_data = zqtree_get_zfs_data(sb);
 	struct radix_tree_root *quota_tree_root;
 
-	if (handle_data == NULL)
-		return 0;
-
-	quota_tree_root = type == USRQUOTA ? &handle_data->user_quota_tree
-	    : &handle_data->group_quota_tree;
-
+	quota_tree_root = zqtree_get_tree_for_type(sb, type);
 	return zqtree_radix_tree_destroy(quota_tree_root);
 }
 
@@ -215,52 +223,69 @@ int zqtree_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
 int zqtree_zfs_sync_tree(void *sb, int type)
 {
 	struct zfs_handle_data *handle_data = zqtree_get_zfs_data(sb);
-	int new, err;
-	int prop = type == USRQUOTA ? 0 : 2;
+	int err, prop;
+	struct radix_tree_root *quota_tree_root;
+	struct quota_data *qd;
 
 	zfs_prop_iter_t iter;
 	zfs_prop_pair_t *pair;
 
-	zfs_prop_iter_start(handle_data->zfs_handle, prop, &iter);
+	quota_tree_root = zqtree_get_tree_for_type(sb, type);
 
-	for (; (pair = zfs_prop_iter_item(&iter)); zfs_prop_iter_next(&iter)) {
-		struct quota_data *qd;
+	if (!quota_tree_root)
+		return -ENOENT;
 
-		/* TODO introduce a short version of the core function for this */
-		qd = zqtree_lookup_quota_data(sb, type, pair->rid, &new);
+	prop = type == USRQUOTA ? 0 : 2;
+	for (zfs_prop_iter_start(handle_data->zfs_handle, prop, &iter);
+	     (pair = zfs_prop_iter_item(&iter)); zfs_prop_iter_next(&iter)) {
+
+		qd = zqtree_lookup_quota_data(quota_tree_root, pair->rid, NULL);
 		qd->space_used = pair->value;
 	}
 
+	if (zfs_prop_iter_error(&iter))
+		goto out;
+
 	prop++;
 
-	zfs_prop_iter_reset(prop, &iter);
-	for (; (pair = zfs_prop_iter_item(&iter)); zfs_prop_iter_next(&iter)) {
-		struct quota_data *qd;
+	for (zfs_prop_iter_reset(prop, &iter);
+	     (pair = zfs_prop_iter_item(&iter)); zfs_prop_iter_next(&iter)) {
 
-		qd = zqtree_lookup_quota_data(sb, type, pair->rid, &new);
+		qd = zqtree_lookup_quota_data(quota_tree_root, pair->rid, NULL);
 		qd->space_quota = pair->value;
 	}
 
+	if (zfs_prop_iter_error(&iter))
+		goto out;
+
+#ifdef USEROBJ_QUOTA
 	prop += 3;
 
-	zfs_prop_iter_reset(prop, &iter);
-	for (; (pair = zfs_prop_iter_item(&iter)); zfs_prop_iter_next(&iter)) {
-		struct quota_data *qd;
+	for (zfs_prop_iter_reset(prop, &iter);
+	     (pair = zfs_prop_iter_item(&iter)); zfs_prop_iter_next(&iter)) {
 
-		qd = zqtree_lookup_quota_data(sb, type, pair->rid, &new);
+		qd = zqtree_lookup_quota_data(quota_tree_root, pair->rid, NULL);
 		qd->obj_used = pair->value;
 	}
 
+	if (zfs_prop_iter_error(&iter))
+		goto out;
+
 	prop++;
 
-	zfs_prop_iter_reset(prop, &iter);
-	for (; (pair = zfs_prop_iter_item(&iter)); zfs_prop_iter_next(&iter)) {
-		struct quota_data *qd;
+	for (zfs_prop_iter_reset(prop, &iter);
+	     (pair = zfs_prop_iter_item(&iter)); zfs_prop_iter_next(&iter)) {
 
-		qd = zqtree_lookup_quota_data(sb, type, pair->rid, &new);
+		qd = zqtree_lookup_quota_data(quota_tree_root, pair->rid, NULL);
 		qd->obj_quota = pair->value;
 	}
 
+	if (zfs_prop_iter_error(&iter))
+		goto out;
+
+#endif
+
+out:
 	zfs_prop_iter_stop(&iter);
 
 	err = zfs_prop_iter_error(&iter);
