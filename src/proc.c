@@ -58,6 +58,7 @@ static int read_proc_quotafile(char *page, off_t off, int count,
 	int res = 0;
 	radix_tree_iter_t iter;
 	struct quota_data *qd;
+	struct v1_disk_dqblk *buf = (struct v1_disk_dqblk *)page;
 	printk("%s\n", __func__);
 
 	memset(page, 0, count);
@@ -74,10 +75,7 @@ static int read_proc_quotafile(char *page, off_t off, int count,
 		if (qd->qid >= qid_last)
 			break;
 
-		quota_data_to_v1_disk_dqblk(qd,
-					    page + (qd->qid -
-						    qid_start) *
-					    V1_DISK_DQBLK_SIZE);
+		quota_data_to_v1_disk_dqblk(qd, &buf[qd->qid - qid_start]);
 		res = (qd->qid - qid_start + 1) * V1_DISK_DQBLK_SIZE;
 	}
 
