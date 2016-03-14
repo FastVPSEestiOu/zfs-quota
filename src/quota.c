@@ -62,8 +62,6 @@ static int zfsquota_get_quoti(struct super_block *sb, int type, qid_t idx,
 	return 0;
 }
 
-int zqtree_zfs_sync_tree(void *sb, int type);
-
 static int zfsquota_sync(struct super_block *sb, int type)
 {
 	printk("%s\n", __func__);
