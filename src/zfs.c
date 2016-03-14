@@ -2,8 +2,6 @@
 #include <zfs_config.h>
 #include <sys/zfs_context.h>
 #include <sys/types.h>
-#include <sys/zpl.h>
-#include <sys/zfs_ioctl.h>
 #include <sys/zfs_vfsops.h>
 
 #include "zfs.h"

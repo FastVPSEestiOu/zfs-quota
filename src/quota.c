@@ -1,12 +1,9 @@
 
-#include <linux/backing-dev.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/vzquota.h>
 #include <linux/virtinfo.h>
 #include <linux/ve_proto.h>
-
-#include <linux/quotaops.h>
 
 #include "tree.h"
 
