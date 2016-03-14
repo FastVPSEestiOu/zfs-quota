@@ -66,8 +66,6 @@ static int read_proc_quotafile(char *page, off_t off, int count,
 	qid_start = off / V1_DISK_DQBLK_SIZE;
 	qid_last = (off + count) / V1_DISK_DQBLK_SIZE;
 
-	zqtree_print_tree(quota_tree_root);
-
 	for (radix_tree_iter_start(&iter, quota_tree_root, qid_start);
 	     (qd = radix_tree_iter_item(&iter));
 	     radix_tree_iter_next(&iter, qd->qid)) {
