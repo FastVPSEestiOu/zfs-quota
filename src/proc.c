@@ -60,9 +60,6 @@ static int read_proc_quotafile(char *page, off_t off, int count,
 	struct quota_data *qd;
 	printk("%s\n", __func__);
 
-	if (off >= 65536 * 40)
-		return 0;
-
 	memset(page, 0, count);
 
 	qid_start = off / V1_DISK_DQBLK_SIZE;
