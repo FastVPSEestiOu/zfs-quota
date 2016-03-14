@@ -148,9 +148,9 @@ int zqtree_print_tree(struct radix_tree_root *quota_tree_root)
 #ifdef USEROBJ_QUOTA
 		     ", .obj_used = %Lu, .obj_quota = %Lu"
 #endif
-		     " }\n", qd, qd->qid, qd->space_used, qd->space_quota,
+		     " }\n", qd, qd->qid, qd->space_used, qd->space_quota
 #ifdef USEROBJ_QUOTA
-		     qd->obj_used, qd->obj_quota
+		     , qd->obj_used, qd->obj_quota
 #endif
 		    );
 	}
@@ -234,6 +234,8 @@ int zqtree_zfs_sync_tree(void *sb, int type)
 
 	if (!quota_tree_root)
 		return -ENOENT;
+
+#warning Magic numbers. Hate them.
 
 	prop = type == USRQUOTA ? 0 : 2;
 	for (zfs_prop_iter_start(handle_data->zfs_handle, prop, &iter);
