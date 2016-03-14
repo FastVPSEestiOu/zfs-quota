@@ -86,8 +86,14 @@ struct quotactl_ops zfsquota_q_cops = {
 #endif
 };
 
-struct quota_format_type zfs_quota_empty_v2_format = {
+struct quota_format_type zfs_quota_empty_vfsold_format = {
 	.qf_fmt_id = QFMT_VFS_OLD,
+	.qf_ops = NULL,
+	.qf_owner = THIS_MODULE,
+};
+
+struct quota_format_type zfs_quota_empty_vfsv2_format = {
+	.qf_fmt_id = QFMT_VFS_V1,
 	.qf_ops = NULL,
 	.qf_owner = THIS_MODULE,
 };
@@ -103,8 +109,9 @@ static int zfsquota_notify_quota_on(struct super_block *sb)
 	sb->s_qcop = &zfsquota_q_cops;
 	sb->s_dquot.flags = dquot_state_flag(DQUOT_USAGE_ENABLED, USRQUOTA) |
 	    dquot_state_flag(DQUOT_USAGE_ENABLED, GRPQUOTA);
-	sb->s_dquot.info[USRQUOTA].dqi_format = &zfs_quota_empty_v2_format;
-	sb->s_dquot.info[GRPQUOTA].dqi_format = &zfs_quota_empty_v2_format;
+
+	sb->s_dquot.info[USRQUOTA].dqi_format = &zfs_quota_empty_vfsold_format;
+	sb->s_dquot.info[GRPQUOTA].dqi_format = &zfs_quota_empty_vfsold_format;
 
 	if (zqtree_init_superblock(sb))
 		return NOTIFY_BAD;
@@ -156,7 +163,7 @@ static int __init zfsquota_init(void)
 
 	virtinfo_notifier_register(VITYPE_QUOTA, &zfsquota_notifier_block);
 
-	register_quota_format(&zfs_quota_empty_v2_format);
+	register_quota_format(&zfs_quota_empty_vfsold_format);
 	return 0;
 }
 
@@ -166,7 +173,7 @@ static void __exit zfsquota_exit(void)
 	zfsquota_tree_exit();
 	virtinfo_notifier_unregister(VITYPE_QUOTA, &zfsquota_notifier_block);
 
-	unregister_quota_format(&zfs_quota_empty_v2_format);
+	unregister_quota_format(&zfs_quota_empty_vfsold_format);
 
 	return;
 }
