@@ -80,7 +80,7 @@ out:
 
 struct zfs_aquotq_lookdata {
 	dev_t dev;
-	int type;
+	int type, fmt;
 };
 
 static int zfs_aquotq_looktest(struct inode *inode, void *data)
@@ -90,6 +90,9 @@ static int zfs_aquotq_looktest(struct inode *inode, void *data)
 	    zfs_aquot_getidev(inode) == d->dev &&
 	    PROC_I(inode)->fd == d->type + 1;
 }
+
+int zfs_aquotq_vfsold_lookset(struct inode *inode);
+int zfs_aquotq_vfsv2r1_lookset(struct inode *inode);
 
 static int zfs_aquotq_lookset(struct inode *inode, void *data)
 {
@@ -103,13 +106,14 @@ static int zfs_aquotq_lookset(struct inode *inode, void *data)
 	inode->i_gid = 0;
 	inode->i_nlink = 1;
 	inode->i_op = &zfs_aquotf_inode_operations;
-	inode->i_fop = &zfs_aquotf_vfsold_file_operations;
 	PROC_I(inode)->fd = d->type + 1;
 	zfs_aquot_setidev(inode, d->dev);
 
-	/* Setting size */
-#warning fixme
-	inode->i_size = 100 * 40;
+	if (d->fmt == QFMT_VFS_OLD) {
+		zfs_aquotq_vfsold_lookset(inode);
+	} else if (d->fmt == QFMT_VFS_V1) {
+		zfs_aquotq_vfsv2r1_lookset(inode);
+	}
 	return 0;
 }
 
@@ -128,7 +132,7 @@ static struct dentry *zfs_aquotq_lookup(struct inode *dir,
 {
 	struct inode *inode;
 	struct zfs_aquotq_lookdata d;
-	int k;
+	int k, fmt;
 	printk("%s\n", __func__);
 
 	if (dentry->d_name.len == sizeof(quota_user) - 1) {
@@ -136,20 +140,34 @@ static struct dentry *zfs_aquotq_lookup(struct inode *dir,
 			   sizeof(quota_user) - 1))
 			goto out;
 		k = USRQUOTA;
+		fmt = QFMT_VFS_OLD;
 	} else if (dentry->d_name.len == sizeof(quota_group) - 1) {
 		if (memcmp(dentry->d_name.name, quota_group,
 			   sizeof(quota_group) - 1))
 			goto out;
 		k = GRPQUOTA;
+		fmt = QFMT_VFS_OLD;
+	} else if (dentry->d_name.len == sizeof(aquota_user) - 1) {
+		if (memcmp(dentry->d_name.name, aquota_user,
+			   sizeof(aquota_user) - 1))
+			goto out;
+		k = USRQUOTA;
+		fmt = QFMT_VFS_V1;
+	} else if (dentry->d_name.len == sizeof(aquota_group) - 1) {
+		if (memcmp(dentry->d_name.name, aquota_group,
+			   sizeof(aquota_group) - 1))
+			goto out;
+		k = GRPQUOTA;
+		fmt = QFMT_VFS_V1;
 	} else
 		goto out;
 	d.dev = zfs_aquot_getidev(dir);
 	d.type = k;
+	d.fmt = fmt;
 
-	inode = iget5_locked(dir->i_sb, dir->i_ino + k + 1,
+	inode = iget5_locked(dir->i_sb, dir->i_ino + k + fmt * 10 + 1,
 			     zfs_aquotq_looktest, zfs_aquotq_lookset, &d);
 
-	/* qmlbk ref is not needed, we used it for i_size calculation only */
 	if (inode == NULL)
 		goto out;
 
