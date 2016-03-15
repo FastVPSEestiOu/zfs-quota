@@ -11,6 +11,22 @@
 #include "tree.h"
 #include "radix-tree-iter.h"
 
+/* First generic header */
+struct v2_disk_dqheader {
+	__le32 dqh_magic;	/* Magic number identifying file */
+	__le32 dqh_version;	/* File version */
+};
+
+/* Header with type and version specific information */
+struct v2_disk_dqinfo {
+	__le32 dqi_bgrace;	/* Time before block soft limit becomes hard limit */
+	__le32 dqi_igrace;	/* Time before inode soft limit becomes hard limit */
+	__le32 dqi_flags;	/* Flags for quotafile (DQF_*) */
+	__le32 dqi_blocks;	/* Number of blocks in file */
+	__le32 dqi_free_blk;	/* Number of first free block in the list */
+	__le32 dqi_free_entry;	/* Number of block with at least one free entry */
+};
+
 struct qt_disk_dqdbheader {
 	__le32 dqdh_next_free;	/* Number of next block with free entry */
 	__le32 dqdh_prev_free;	/* Number of previous block with free entry */
@@ -58,10 +74,6 @@ static int quota_data_to_v2r1_disk_dqblk(struct quota_data *quota_data,
  */
 struct qtree_tree_block;
 
-#warning introduce qtree_tree_root and keep a list of free data-blocks there\
-         as well as list quota_tree_root and allocated blocks count \
-         and optionally radix_tree or simple list of blocks
-
 /* FIXME this qtree is rather space-consuming since it allocates new 
  * data block for each leaf
  *
@@ -82,6 +94,7 @@ struct qtree_tree_root {
 	struct radix_tree_root *quota_tree_root;
 	uint32_t blocks;
 	uint32_t data_per_block;
+	int type;
 	struct qtree_tree_block root_block;
 
 	struct radix_tree_root blocks_tree;
@@ -209,7 +222,7 @@ int output_block(char *buf, uint32_t blknum, struct qtree_tree_root *tree_root)
 
 	node = radix_tree_lookup(&tree_root->blocks_tree, blknum);
 	if (!node)
-		return -ENOENT;
+		return 0;
 
 	memset(buf, 0, 1024);
 	//printk("outblk = %d\n", blknum);
@@ -260,10 +273,11 @@ int output_block(char *buf, uint32_t blknum, struct qtree_tree_root *tree_root)
 		}
 	}
 
-	return 0;
+	return 1024;
 }
 
-struct qtree_tree_root *build_qtree(struct radix_tree_root *quota_tree_root)
+struct qtree_tree_root *build_qtree(int type,
+				    struct radix_tree_root *quota_tree_root)
 {
 	struct qtree_tree_root *root;
 	int blocks = 1;		//, i;
@@ -275,6 +289,7 @@ struct qtree_tree_root *build_qtree(struct radix_tree_root *quota_tree_root)
 	root->blocks = 1;
 	root->quota_tree_root = quota_tree_root;
 	root->data_per_block = 4;
+	root->type = type;
 
 	memset(&root->root_block, 0, sizeof(root->root_block));
 	root->root_block.blknum = blocks;
@@ -294,27 +309,15 @@ struct qtree_tree_root *build_qtree(struct radix_tree_root *quota_tree_root)
 	return root;
 }
 
-static ssize_t zfs_aquotf_vfsv2r1_read(struct file *file,
-				       char __user * buf, size_t size,
-				       loff_t * ppos)
+static int zfs_aquotf_vfsv2r1_open(struct inode *inode, struct file *file)
 {
-	char *page;
-	size_t bufsize;
-	ssize_t l, l2, copied;
-	struct inode *inode;
+	int err, type;
 	struct block_device *bdev;
 	struct super_block *sb;
 	struct radix_tree_root *quota_tree_root;
-	int err, type;
-	printk("%s\n", __func__);
-
-	err = -ENOMEM;
-	page = (char *)__get_free_page(GFP_KERNEL);
-	if (page == NULL)
-		goto out_err;
+	struct qtree_tree_root *root;
 
 	err = -ENODEV;
-	inode = file->f_dentry->d_inode;
 	bdev = bdget(zfs_aquot_getidev(inode));
 	if (bdev == NULL)
 		goto out_err;
@@ -326,19 +329,88 @@ static ssize_t zfs_aquotf_vfsv2r1_read(struct file *file,
 	drop_super(sb);
 
 	quota_tree_root = zqtree_get_tree_for_type(sb, type);
+	root = build_qtree(type, quota_tree_root);
+
+	print_tree(&root->root_block);
+
+	file->private_data = root;
+
+	return 0;
+
+out_err:
+	return err;
+}
+
+static int zfs_aquotf_vfsv2r1_release(struct inode *inode, struct file *file)
+{
+	struct qtree_tree_root *root = file->private_data;
+	int i = 0;
+	void *ptr;
+
+	for (i = 0; i < root->blocks; ++i) {
+		ptr = radix_tree_lookup(&root->blocks_tree, i);
+		kfree(ptr);
+	}
+
+	kfree(root);
+
+	return 0;
+}
+
+#define QTREE_BLOCKSIZE     1024
+
+static ssize_t read_proc_quotafile(char *page, off_t blknum,
+				   struct qtree_tree_root *root)
+{
+	memset(page, 0, QTREE_BLOCKSIZE);
+	if (blknum == 0) {
+		struct v2_disk_dqheader *dqh = (struct v2_disk_dqheader *)page;
+		struct v2_disk_dqinfo *dq_disk_info;
+
+		dqh->dqh_magic =
+		    root->type == USRQUOTA ? 0xd9c01f11 : 0xd9c01927;
+		dqh->dqh_version = 1;
+
+		dq_disk_info =
+		    (struct v2_disk_dqinfo *)(page +
+					      sizeof(struct v2_disk_dqheader));
+		dq_disk_info->dqi_blocks = root->blocks + 1;
+
+		return 1024;
+	}
+	return output_block(page, blknum, root);
+}
+
+static ssize_t zfs_aquotf_vfsv2r1_read(struct file *file,
+				       char __user * buf, size_t size,
+				       loff_t * ppos)
+{
+	char *page;
+	size_t bufsize;
+	ssize_t l, l2, copied;
+	int err;
+	struct qtree_tree_root *root = file->private_data;
+	printk("%s\n", __func__);
+
+	err = -ENOMEM;
+	page = (char *)__get_free_page(GFP_KERNEL);
+	if (page == NULL)
+		goto out_err;
 
 	copied = 0;
 	l = l2 = 0;
 	while (1) {
-		bufsize = min(size, (size_t) PAGE_SIZE);
+		bufsize = min(size, (size_t) QTREE_BLOCKSIZE);
 		if (bufsize <= 0)
 			break;
 
-		l = read_proc_quotafile(page, *ppos, bufsize, quota_tree_root);
+		l = read_proc_quotafile(page, *ppos / QTREE_BLOCKSIZE, root);
 		if (l <= 0)
 			break;
+		l = bufsize;
 
-		l2 = copy_to_user(buf, page, l);
+		l2 = copy_to_user(buf, page + (*ppos & (QTREE_BLOCKSIZE - 1)),
+				  l);
 		copied += l - l2;
 		if (l2)
 			break;
@@ -364,7 +436,9 @@ out_err:
 }
 
 static struct file_operations zfs_aquotf_vfsv2r1_file_operations = {
+	.open = &zfs_aquotf_vfsv2r1_open,
 	.read = &zfs_aquotf_vfsv2r1_read,
+	.release = &zfs_aquotf_vfsv2r1_release,
 };
 
 int zfs_aquotq_vfsv2r1_lookset(struct inode *inode)
