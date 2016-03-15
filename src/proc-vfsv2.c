@@ -347,12 +347,17 @@ static int zfs_aquotf_vfsv2r1_release(struct inode *inode, struct file *file)
 	int i = 0;
 	void *ptr;
 
-	for (i = 0; i < root->blocks; ++i) {
-		ptr = radix_tree_lookup(&root->blocks_tree, i);
+	if (!root)
+		return 0;
+
+	/* Tree root block is root->root_block, skip it */
+	for (i = 2; i < root->blocks; ++i) {
+		ptr = radix_tree_delete(&root->blocks_tree, i);
 		kfree(ptr);
 	}
 
 	kfree(root);
+	file->private_data = NULL;
 
 	return 0;
 }
