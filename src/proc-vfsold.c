@@ -72,7 +72,6 @@ static int read_proc_quotafile(char *page, off_t off, int count,
 	return res;
 }
 
-struct qtree_tree_block *build_qtree(struct radix_tree_root *quota_tree_root);
 static ssize_t zfs_aquotf_vfsold_read(struct file *file,
 				      char __user * buf, size_t size,
 				      loff_t * ppos)
@@ -105,7 +104,6 @@ static ssize_t zfs_aquotf_vfsold_read(struct file *file,
 	drop_super(sb);
 
 	quota_tree_root = zqtree_get_tree_for_type(sb, type);
-	build_qtree(quota_tree_root);
 
 	copied = 0;
 	l = l2 = 0;
