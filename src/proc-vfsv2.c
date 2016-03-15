@@ -79,6 +79,10 @@ static int read_proc_quotafile(char *page, off_t off, int count,
  */
 struct qtree_tree_block;
 
+#warning introduce qtree_tree_root and keep a list of free data-blocks there\
+         as well as list quota_tree_root and allocated blocks count \
+         and optionally radix_tree or simple list of blocks
+
 struct qtree_tree_block {
 	uint32_t blknum;
 	uint32_t depth, num;
