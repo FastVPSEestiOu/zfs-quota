@@ -299,8 +299,9 @@ struct qtree_tree_root *build_qtree(int type,
 	radix_tree_insert(&root->blocks_tree, 1, &root->root_block);
 	fill_childs(&root->root_block, root);
 
-	print_tree(&root->root_block);
 #if 0
+	print_tree(&root->root_block);
+
 	for (i = 1; i < root->blocks; ++i) {
 		output_block(i, root);
 	}
@@ -331,7 +332,7 @@ static int zfs_aquotf_vfsv2r1_open(struct inode *inode, struct file *file)
 	quota_tree_root = zqtree_get_tree_for_type(sb, type);
 	root = build_qtree(type, quota_tree_root);
 
-	print_tree(&root->root_block);
+//	print_tree(&root->root_block);
 
 	file->private_data = root;
 
