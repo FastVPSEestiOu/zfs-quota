@@ -39,10 +39,10 @@ install_spl() {
 
 install_zfs() {
 	[ -f zfs_installed ] && return
-	git clone https://github.com/paboldin/zfs/ || :
+	git clone https://github.com/jxiong/zfs/ || :
 	pushd zfs
 	git pull
-	git checkout dnode_fix
+	git checkout dnode_quota
 	[ ! -f ./configure ] && ./autogen.sh
 	[ ! -f Makefile ] && ./configure --with-linux-obj=$KDIR
 	make -j
