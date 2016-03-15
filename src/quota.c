@@ -107,8 +107,13 @@ static int zfsquota_notify_quota_on(struct super_block *sb)
 	sb->s_dquot.flags = dquot_state_flag(DQUOT_USAGE_ENABLED, USRQUOTA) |
 	    dquot_state_flag(DQUOT_USAGE_ENABLED, GRPQUOTA);
 
+#ifdef USE_VFSOLD_FORMAT
 	sb->s_dquot.info[USRQUOTA].dqi_format = &zfs_quota_empty_vfsold_format;
 	sb->s_dquot.info[GRPQUOTA].dqi_format = &zfs_quota_empty_vfsold_format;
+#else
+	sb->s_dquot.info[USRQUOTA].dqi_format = &zfs_quota_empty_vfsv2_format;
+	sb->s_dquot.info[GRPQUOTA].dqi_format = &zfs_quota_empty_vfsv2_format;
+#endif
 
 	if (zqtree_init_superblock(sb))
 		return NOTIFY_BAD;
