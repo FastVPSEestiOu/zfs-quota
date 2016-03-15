@@ -15,3 +15,8 @@ zfs-quota.ko: $(zfs-quota-y:%.o=%.c)
 	@echo Compiling for kernel $(KVERSION)
 	make -C $(KDIR) M=$(CURDIR) modules CONFIG_DEBUG_INFO=y
 	@touch $@
+
+modules_install: zfs-quota.ko
+	@echo Installing for kernel $(KVERSION)
+	make -C $(KDIR) M=$(CURDIR) modules_install
+	@touch $@
