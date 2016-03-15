@@ -19,6 +19,7 @@ struct radix_tree_root *zqtree_get_tree_for_type(void *sb, int type);
 
 int zqtree_zfs_sync_tree(void *sb, int type);
 
+void zqtree_print_quota_data(struct quota_data *qd);
 int zqtree_print_tree(struct radix_tree_root *root);
 int zqtree_print_tree_sb_type(void *sb, int type);
 

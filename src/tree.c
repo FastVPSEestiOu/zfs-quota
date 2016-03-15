@@ -134,6 +134,19 @@ struct quota_data *zqtree_get_quota_data(void *sb, int type, qid_t id,
 	return quota_data;
 }
 
+void zqtree_print_quota_data(struct quota_data *qd)
+{
+	printk("qd = %p, { .qid = %u, .space_used = %Lu, .space_quota = %Lu"
+#ifdef USEROBJ_QUOTA
+	       ", .obj_used = %Lu, .obj_quota = %Lu"
+#endif
+	       " }\n", qd, qd->qid, qd->space_used, qd->space_quota
+#ifdef USEROBJ_QUOTA
+	       , qd->obj_used, qd->obj_quota
+#endif
+	    );
+}
+
 int zqtree_print_tree(struct radix_tree_root *quota_tree_root)
 {
 	radix_tree_iter_t iter;
@@ -143,16 +156,7 @@ int zqtree_print_tree(struct radix_tree_root *quota_tree_root)
 	     (qd = radix_tree_iter_item(&iter));
 	     radix_tree_iter_next(&iter, qd->qid)) {
 
-		printk
-		    ("qd = %p, { .qid = %u, .space_used = %Lu, .space_quota = %Lu"
-#ifdef USEROBJ_QUOTA
-		     ", .obj_used = %Lu, .obj_quota = %Lu"
-#endif
-		     " }\n", qd, qd->qid, qd->space_used, qd->space_quota
-#ifdef USEROBJ_QUOTA
-		     , qd->obj_used, qd->obj_quota
-#endif
-		    );
+		zqtree_print_quota_data(qd);
 	}
 
 	return 0;
@@ -292,7 +296,7 @@ out:
 
 	err = zfs_prop_iter_error(&iter);
 
-	if (!err) {
+	if (0 && !err) {
 		printk("tree = %d\n", type);
 		zqtree_print_tree_sb_type(sb, type);
 	}
