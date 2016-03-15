@@ -51,37 +51,6 @@ static int quota_data_to_v2r1_disk_dqblk(struct quota_data *quota_data,
 
 #define V2R1_DISK_DQBLK_SIZE (sizeof(struct v2r1_disk_dqblk))
 
-/*
- * FIXME: this function can handle quota files up to 2GB only.
- */
-static int read_proc_quotafile(char *page, off_t off, int count,
-			       struct radix_tree_root *quota_tree_root)
-{
-	off_t qid_start, qid_last;
-	int res = 0;
-	radix_tree_iter_t iter;
-	struct quota_data *qd;
-	struct v1_disk_dqblk *buf = (struct v1_disk_dqblk *)page;
-
-	memset(page, 0, count);
-
-	qid_start = off / V2R1_DISK_DQBLK_SIZE;
-	qid_last = (off + count) / V2R1_DISK_DQBLK_SIZE;
-
-	for (radix_tree_iter_start(&iter, quota_tree_root, qid_start);
-	     (qd = radix_tree_iter_item(&iter));
-	     radix_tree_iter_next(&iter, qd->qid)) {
-
-		if (qd->qid >= qid_last)
-			break;
-
-		//quota_data_to_v1_disk_dqblk(qd, &buf[qd->qid - qid_start]);
-		//res = (qd->qid - qid_start + 1) * V1_DISK_DQBLK_SIZE;
-	}
-
-	return res;
-}
-
 /* TODO (Pavel Boldin) basically this code converts qid_t keyed radix tree
  * into blknum-keyed radix tree. A better data structure that keeps both
  * trees simultaneously should be used instead. This structure code is to be
@@ -234,7 +203,7 @@ void print_tree(struct qtree_tree_block *node)
 	}
 }
 
-int output_block(uint32_t blknum, struct qtree_tree_root *tree_root)
+int output_block(char *buf, uint32_t blknum, struct qtree_tree_root *tree_root)
 {
 	struct qtree_tree_block *node, *child;
 
@@ -242,31 +211,52 @@ int output_block(uint32_t blknum, struct qtree_tree_root *tree_root)
 	if (!node)
 		return -ENOENT;
 
-	printk("outblk = %d\n", blknum);
+	memset(buf, 0, 1024);
+	//printk("outblk = %d\n", blknum);
 	if (node->depth < QTREE_DEPTH - 1) {
-		uint32_t refnum;
+		__le32 *ref = (__le32 *) buf;
 		list_for_each_entry(child, &node->child, siblings) {
-			refnum =
+			uint32_t n =
 			    (child->num >> 8 *
 			     (QTREE_DEPTH - child->depth)) & 255;
-			printk("ref[%d] = %d\n", refnum, child->blknum);
+			ref[n] = cpu_to_le32(child->blknum);
+			//       printk("ref[%d] = %d\n", refnum, child->blknum);
 		}
 	} else if (node->depth == QTREE_DEPTH - 1) {
+		/* tree leaf, points to data blocks */
+		__le32 *ref = (__le32 *) buf;
+
 		struct qtree_tree_block *data_block;
 		list_for_each_entry(data_block, &node->child, siblings) {
 			struct qtree_leaf *leaf;
+
 			list_for_each_entry(leaf, &data_block->child, siblings) {
 				if (node->num <= leaf->qd->qid &&
-				    leaf->qd->qid <= node->num + 255)
+				    leaf->qd->qid <= node->num + 255) {
+
+					ref[leaf->qd->qid % 255] =
+					    cpu_to_le32(data_block->blknum);
+#if 0
 					printk("ref[%d] = %d\n",
 					       leaf->qd->qid & 255,
 					       data_block->blknum);
+#endif
+				}
 			}
 		}
 	} else if (node->depth == QTREE_DEPTH) {
+		/* data block */
+		struct qt_disk_dqdbheader *dh =
+		    (struct qt_disk_dqdbheader *)buf;
+		struct v2r1_disk_dqblk *db =
+		    (struct v2r1_disk_dqblk *)(buf + sizeof(*dh));
 		struct qtree_leaf *leaf;
+		int i = 0;
+
+		dh->dqdh_entries = node->num;
+
 		list_for_each_entry(leaf, &node->child, siblings) {
-			zqtree_print_quota_data(leaf->qd);
+			quota_data_to_v2r1_disk_dqblk(leaf->qd, &db[i++]);
 		}
 	}
 
@@ -276,7 +266,7 @@ int output_block(uint32_t blknum, struct qtree_tree_root *tree_root)
 struct qtree_tree_root *build_qtree(struct radix_tree_root *quota_tree_root)
 {
 	struct qtree_tree_root *root;
-	int blocks = 1, i;
+	int blocks = 1;		//, i;
 
 	root = kzalloc(sizeof(*root), GFP_NOFS);
 	if (!root)
@@ -295,9 +285,11 @@ struct qtree_tree_root *build_qtree(struct radix_tree_root *quota_tree_root)
 	fill_childs(&root->root_block, root);
 
 	print_tree(&root->root_block);
+#if 0
 	for (i = 1; i < root->blocks; ++i) {
 		output_block(i, root);
 	}
+#endif
 
 	return root;
 }
