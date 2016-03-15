@@ -3,6 +3,11 @@
 set -x
 set -e
 
+install_depends() {
+	yum groupinstall -q -y 'Development Tools'
+	yum install -q -y wget zlib-devel libuuid-devel libblkid-devel
+}
+
 install_openvz() {
 	KERNEL_VERSION="$(rpm -q vzkernel-devel | sed -e '$!d; s/vzkernel-devel-//; s/.x86_64//')"
 	KDIR="/lib/modules/$KERNEL_VERSION/build"
@@ -12,7 +17,7 @@ install_openvz() {
 		wget -O /etc/yum.repos.d/openvz.repo \
 			http://download.openvz.org/openvz.repo
 	rpm --import http://download.openvz.org/RPM-GPG-Key-OpenVZ
-	yum install -qy vzkernel vzkernel-devel 
+	yum install -q -y vzkernel vzkernel-devel vzctl
 	KERNEL_VERSION="$(rpm -q vzkernel-devel | sed -e '$!d; s/vzkernel-devel-//; s/.x86_64//')"
 	KDIR="/lib/modules/$KERNEL_VERSION/build"
 	export KERNEL_VERSION KDIR
@@ -51,7 +56,7 @@ install_zfs_quota() {
 	git clone git@github.com:paboldin/zfs-quota.git || :
 	pushd zfs-quota
 	git pull
-	make KDIR=$KDIR
+	make KDIR=$KDIR KERNEL_VERSION=$KERNEL_VERSION
 	make install
 	popd
 	touch zfs_quota_installed
@@ -62,6 +67,7 @@ fix_initd_vz() {
 	       s/#*/#/; p; s/vzdquota \+//; s/#*// }' -i /etc/init.d/vz
 }
 
+install_depends
 install_openvz
 install_spl
 install_zfs

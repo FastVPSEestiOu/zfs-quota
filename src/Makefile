@@ -1,11 +1,13 @@
 
+KERNEL_VERSION ?= $(shell uname -r)
+
 obj-m = zfs-quota.o
 zfs-quota-y := quota.o proc.o tree.o zfs.o radix-tree-iter.o proc-vfsold.o proc-vfsv2.o
 ccflags-y := -DHAVE_USLEEP_RANGE=1 -DUSEROBJ_QUOTA
 ccflags-y += -I/usr/local/src/spl-0.6.5/include
 ccflags-y += -I/usr/local/src/zfs-0.6.5/include
-ccflags-y += -I/usr/local/src/zfs-0.6.5/$(shell uname -r)
-KBUILD_EXTRA_SYMBOLS = /usr/local/src/zfs-0.6.5/$(shell uname -r)/Module.symvers
+ccflags-y += -I/usr/local/src/zfs-0.6.5/$(KERNEL_VERSION)
+KBUILD_EXTRA_SYMBOLS = /usr/local/src/zfs-0.6.5/$(KERNEL_VERSION)/Module.symvers
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 
