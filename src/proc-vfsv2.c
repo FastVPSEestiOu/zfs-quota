@@ -94,6 +94,7 @@ struct qtree_tree_root {
 	struct radix_tree_root *quota_tree_root;
 	uint32_t blocks;
 	uint32_t data_per_block;
+	uint32_t version;
 	int type;
 	struct qtree_tree_block root_block;
 
@@ -188,6 +189,14 @@ void fill_childs(struct qtree_tree_block *node,
 		if (!r || qd->qid >= stop_key)
 			break;
 
+#warning When doing so this must be also removed from the leafs(?)
+		if (qd->version != tree_root->version) {
+			cur_key = qd->qid + 1;
+			zqtree_remove_old_quota_data(tree_root->quota_tree_root,
+				qd);
+			continue;
+		}
+
 		child =
 		    new_qtree_tree_block(tree_root, qd->qid & ~(dchild - 1),
 					 node);
@@ -277,7 +286,8 @@ int output_block(char *buf, uint32_t blknum, struct qtree_tree_root *tree_root)
 }
 
 struct qtree_tree_root *build_qtree(int type,
-				    struct radix_tree_root *quota_tree_root)
+				    struct radix_tree_root *quota_tree_root,
+				    uint32_t version)
 {
 	struct qtree_tree_root *root;
 	int blocks = 1;		//, i;
@@ -290,6 +300,7 @@ struct qtree_tree_root *build_qtree(int type,
 	root->quota_tree_root = quota_tree_root;
 	root->data_per_block = 4;
 	root->type = type;
+	root->version = version;
 
 	memset(&root->root_block, 0, sizeof(root->root_block));
 	root->root_block.blknum = blocks;
@@ -317,6 +328,7 @@ static int zfs_aquotf_vfsv2r1_open(struct inode *inode, struct file *file)
 	struct super_block *sb;
 	struct radix_tree_root *quota_tree_root;
 	struct qtree_tree_root *root;
+	uint32_t version = 0;
 
 	err = -ENODEV;
 	bdev = bdget(zfs_aquot_getidev(inode));
@@ -329,8 +341,8 @@ static int zfs_aquotf_vfsv2r1_open(struct inode *inode, struct file *file)
 		goto out_err;
 	drop_super(sb);
 
-	quota_tree_root = zqtree_get_tree_for_type(sb, type);
-	root = build_qtree(type, quota_tree_root);
+	quota_tree_root = zqtree_get_tree_for_type(sb, type, &version);
+	root = build_qtree(type, quota_tree_root, version);
 
 //	print_tree(&root->root_block);
 

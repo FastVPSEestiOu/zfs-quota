@@ -15,7 +15,9 @@ struct quota_data *zqtree_get_quota_data(void *sb, int type, qid_t id,
 					 int update);
 int zqtree_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di);
 
-struct radix_tree_root *zqtree_get_tree_for_type(void *sb, int type);
+struct radix_tree_root *zqtree_get_tree_for_type(void *sb, int type, uint32_t *pversion);
+
+int zqtree_remove_old_quota_data(struct radix_tree_root *root, struct quota_data *qd);
 
 int zqtree_zfs_sync_tree(void *sb, int type);
 
