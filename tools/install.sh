@@ -53,6 +53,7 @@ install_zfs() {
 
 install_zfs_quota() {
 	[ -f zfs_quota_installed ] && return
+	ssh-keyscan -t rsa,dsa -H github.com >> ~/.ssh/known_hosts
 	git clone git@github.com:paboldin/zfs-quota.git || :
 	pushd zfs-quota
 	git pull
@@ -64,7 +65,7 @@ install_zfs_quota() {
 
 fix_initd_vz() {
 	sed -e '/^\s\+MODULES=.*vzdquota/ {
-	       s/#*/#/; p; s/vzdquota \+//; s/#*// }' -i /etc/init.d/vz
+	       s/#*/#/; p; s/vzdquota/zfs-quota/; s/#*// }' -i /etc/init.d/vz
 }
 
 install_depends
