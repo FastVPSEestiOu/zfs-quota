@@ -1,18 +1,13 @@
 
 obj-m = zfs-quota.o
 zfs-quota-y := quota.o proc.o tree.o zfs.o radix-tree-iter.o proc-vfsold.o proc-vfsv2.o
-ccflags-y := -I/opt/zfs/src/spl-0.6.5/include
-ccflags-y += -DHAVE_USLEEP_RANGE=1 -DUSEROBJ_QUOTA
-ccflags-y += -I/opt/zfs/src/zfs-0.6.5/include
+ccflags-y := -DHAVE_USLEEP_RANGE=1 -DUSEROBJ_QUOTA
 ccflags-y += -I/usr/local/src/spl-0.6.5/include
 ccflags-y += -I/usr/local/src/zfs-0.6.5/include
-ccflags-y += -I/usr/local/src/zfs-0.6.5/2.6.32-042stab113.11/
-ccflags-y += -I/opt/zfs/src/zfs-0.6.5/include
-ccflags-y += -I/opt/zfs/src/zfs-0.6.5/2.6.32
-KBUILD_EXTRA_SYMBOLS = /usr/local/src/zfs-0.6.5/2.6.32-042stab113.11/Module.symvers
-KBUILD_EXTRA_SYMBOLS += /opt/zfs/src/zfs-0.6.5/2.6.32/Module.symvers
+ccflags-y += -I/usr/local/src/zfs-0.6.5/$(shell uname -r)
+KBUILD_EXTRA_SYMBOLS = /usr/local/src/zfs-0.6.5/$(shell uname -r)/Module.symvers
 
-KDIR ?= /lib/modules/`uname -r`/build
+KDIR ?= /lib/modules/$(shell uname -r)/build
 
 all: zfs-quota.ko
 
