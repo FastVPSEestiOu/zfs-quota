@@ -66,6 +66,7 @@ install_zfs_quota() {
 fix_initd_vz() {
 	sed -e '/^\s\+MODULES=.*vzdquota/ {
 	       s/#*/#/; p; s/vzdquota/zfs-quota/; s/#*// }' -i /etc/init.d/vz
+	sed -e '/DISK_QUOTA=/ { s/yes/no/; }' -i /etc/vz/vz.conf
 }
 
 install_depends
