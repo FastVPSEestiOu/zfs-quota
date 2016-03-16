@@ -11,21 +11,33 @@ struct quota_data {
 #endif				/* USEROBJ_QUOTA */
 };
 
-struct quota_data *zqtree_get_quota_data(void *sb, int type, qid_t id,
-					 int update);
+struct quota_tree;
+
+struct quota_data *zqtree_get_quota_data(void *sb, int type, qid_t id);
 int zqtree_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di);
 
-struct radix_tree_root *zqtree_get_tree_for_type(void *sb, int type, uint32_t *pversion);
+struct quota_tree *zqtree_get_tree_for_type(void *sb, int type);
 
-int zqtree_remove_old_quota_data(struct radix_tree_root *root, struct quota_data *qd);
+int zqtree_check_qd_version(struct quota_tree *root, struct quota_data *qd);
 
 int zqtree_zfs_sync_tree(void *sb, int type);
 
 void zqtree_print_quota_data(struct quota_data *qd);
-int zqtree_print_tree(struct radix_tree_root *root);
+int zqtree_print_tree(struct quota_tree *root);
 int zqtree_print_tree_sb_type(void *sb, int type);
 
 int zqtree_init_superblock(struct super_block *sb);
 int zqtree_free_superblock(struct super_block *sb);
+
+#ifdef RADIX_TREE_ITER_H_INCLUDED
+void quota_tree_iter_start(
+		radix_tree_iter_t *iter,
+		struct quota_tree *root,
+		unsigned long start_key);
+int quota_tree_gang_lookup(struct quota_tree *root,
+			   struct quota_data **pqd,
+			   unsigned long start_key,
+			   unsigned int max_items);
+#endif
 
 #endif /* TREE_H_INCLUDED */

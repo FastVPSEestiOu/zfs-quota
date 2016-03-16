@@ -9,8 +9,8 @@
 #include <linux/ctype.h>
 
 #include "proc.h"
-#include "tree.h"
 #include "radix-tree-iter.h"
+#include "tree.h"
 
 struct v1_disk_dqblk {
 	__u32 dqb_bhardlimit;	/* absolute limit on disk blks alloc */
@@ -44,8 +44,7 @@ static int quota_data_to_v1_disk_dqblk(struct quota_data *quota_data,
  * FIXME: this function can handle quota files up to 2GB only.
  */
 static int read_proc_quotafile(char *page, off_t off, int count,
-			       struct radix_tree_root *quota_tree_root,
-			       uint32_t version)
+			       struct quota_tree *root)
 {
 	off_t qid_start, qid_last;
 	int res = 0;
@@ -59,17 +58,15 @@ static int read_proc_quotafile(char *page, off_t off, int count,
 	qid_start = off / V1_DISK_DQBLK_SIZE;
 	qid_last = (off + count) / V1_DISK_DQBLK_SIZE;
 
-	for (radix_tree_iter_start(&iter, quota_tree_root, qid_start);
+	for (quota_tree_iter_start(&iter, root, qid_start);
 	     (qd = radix_tree_iter_item(&iter));
 	     radix_tree_iter_next(&iter, qd->qid)) {
 
 		if (qd->qid >= qid_last)
 			break;
 
-		if (qd->version != version) {
-			zqtree_remove_old_quota_data(quota_tree_root, qd);
+		if (!zqtree_check_qd_version(root, qd))
 			continue;
-		}
 
 		quota_data_to_v1_disk_dqblk(qd, &buf[qd->qid - qid_start]);
 		res = (qd->qid - qid_start + 1) * V1_DISK_DQBLK_SIZE;
@@ -88,9 +85,8 @@ static ssize_t zfs_aquotf_vfsold_read(struct file *file,
 	struct inode *inode;
 	struct block_device *bdev;
 	struct super_block *sb;
-	struct radix_tree_root *quota_tree_root;
+	struct quota_tree *root;
 	int err, type;
-	uint32_t version = 0;
 	printk("%s\n", __func__);
 
 	err = -ENOMEM;
@@ -110,7 +106,7 @@ static ssize_t zfs_aquotf_vfsold_read(struct file *file,
 		goto out_err;
 	drop_super(sb);
 
-	quota_tree_root = zqtree_get_tree_for_type(sb, type, &version);
+	root = zqtree_get_tree_for_type(sb, type);
 
 	copied = 0;
 	l = l2 = 0;
@@ -119,8 +115,7 @@ static ssize_t zfs_aquotf_vfsold_read(struct file *file,
 		if (bufsize <= 0)
 			break;
 
-		l = read_proc_quotafile(page, *ppos, bufsize, quota_tree_root,
-					version);
+		l = read_proc_quotafile(page, *ppos, bufsize, root);
 		if (l <= 0)
 			break;
 
