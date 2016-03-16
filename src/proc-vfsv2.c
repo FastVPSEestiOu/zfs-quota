@@ -189,8 +189,7 @@ void fill_childs(struct qtree_tree_block *node,
 		if (!r || qd->qid >= stop_key)
 			break;
 
-#warning When doing so this must be also removed from the leafs(?)
-		if (qd->version != tree_root->version) {
+		if (qd->version < tree_root->version) {
 			cur_key = qd->qid + 1;
 			zqtree_remove_old_quota_data(tree_root->quota_tree_root,
 				qd);
@@ -354,25 +353,49 @@ out_err:
 	return err;
 }
 
-static int zfs_aquotf_vfsv2r1_release(struct inode *inode, struct file *file)
+static int free_qtree_tree_block(struct qtree_tree_block *node)
 {
-	struct qtree_tree_root *root = file->private_data;
-	int i = 0;
-	void *ptr;
+	struct qtree_leaf *leaf, *tmp;
 
+	if (node->depth == QTREE_DEPTH) {
+		/* Free leafs for the data block */
+		list_for_each_entry_safe(leaf, tmp, &node->child, siblings) {
+			list_del(&leaf->siblings);
+			kfree(leaf);
+		}
+	}
+
+	kfree(node);
+
+	return 0;
+}
+
+static int free_qtree(struct qtree_tree_root *root)
+{
+	int i;
+	struct qtree_tree_block *node;
 	if (!root)
 		return 0;
 
 	/* Tree root block is root->root_block, skip it */
 	for (i = 2; i < root->blocks; ++i) {
-		ptr = radix_tree_delete(&root->blocks_tree, i);
-		kfree(ptr);
+		node = radix_tree_delete(&root->blocks_tree, i);
+		free_qtree_tree_block(node);
 	}
 
 	kfree(root);
-	file->private_data = NULL;
 
 	return 0;
+}
+
+static int zfs_aquotf_vfsv2r1_release(struct inode *inode, struct file *file)
+{
+	struct qtree_tree_root *root;
+
+	root = file->private_data;
+	file->private_data = NULL;
+
+	return free_qtree(root);
 }
 
 #define QTREE_BLOCKSIZE     1024
