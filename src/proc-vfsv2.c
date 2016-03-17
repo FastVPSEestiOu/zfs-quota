@@ -65,8 +65,6 @@ static int quota_data_to_v2r1_disk_dqblk(struct quota_data *quota_data,
 	return sizeof(*v2r1);
 }
 
-#define V2R1_DISK_DQBLK_SIZE (sizeof(struct v2r1_disk_dqblk))
-
 /* TODO (Pavel Boldin) basically this code converts qid_t keyed radix tree
  * into blknum-keyed radix tree. A better data structure that keeps both
  * trees simultaneously should be used instead. This structure code is to be
@@ -341,8 +339,6 @@ static int zfs_aquotf_vfsv2r1_open(struct inode *inode, struct file *file)
 
 	quota_tree = zqtree_get_tree_for_type(sb, type);
 	root = build_qtree(type, quota_tree);
-
-//	print_tree(&root->root_block);
 
 	file->private_data = root;
 
