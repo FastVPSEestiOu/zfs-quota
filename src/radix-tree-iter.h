@@ -6,7 +6,7 @@
 
 typedef struct radix_tree_iter {
 	struct radix_tree_root *root;
-	int next_key;
+	unsigned long next_key;
 	void *values[RADIX_TREE_BUFSIZE];
 	int idx, count;
 } radix_tree_iter_t;
