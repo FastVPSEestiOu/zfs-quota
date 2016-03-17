@@ -9,6 +9,8 @@
 #include "radix-tree-iter.h"
 #include "tree.h"
 
+#define ZQTREE_TAG_STALE	0
+
 struct radix_tree_root zfs_handle_data_tree;
 struct kmem_cache *quota_data_cachep = NULL;
 
@@ -241,10 +243,36 @@ int zqtree_check_qd_version(struct quota_tree *quota_tree, struct quota_data *qd
 		return 1;
 	}
 
-	radix_tree_delete(&quota_tree->radix, qd->qid);
-	kmem_cache_free(quota_data_cachep, qd);
+	radix_tree_tag_set(&quota_tree->radix, qd->qid, ZQTREE_TAG_STALE);
 	return 0;
 }
+
+static int _zqtree_zfs_clear(struct quota_tree *quota_tree)
+{
+	struct quota_data *pqds[16];
+	unsigned long curkey = 0;
+	int ret, i;
+
+	while (1) {
+		ret = radix_tree_gang_lookup_tag(
+			&quota_tree->radix,
+			(void **)pqds, curkey, 16, ZQTREE_TAG_STALE);
+
+		if (!ret)
+			break;
+
+		curkey = pqds[ret - 1]->qid + 1;
+
+		for (i = 0; i < ret; ++i) {
+			struct quota_data *qd = pqds[i];
+			radix_tree_delete(&quota_tree->radix, qd->qid);
+			kmem_cache_free(quota_data_cachep, qd);
+		}
+	}
+
+	return 0;
+}
+
 
 int zqtree_zfs_sync_tree(void *sb, int type)
 {
@@ -270,6 +298,8 @@ int zqtree_zfs_sync_tree(void *sb, int type)
 			cond_resched();
 		return 0;
 	}
+
+	_zqtree_zfs_clear(quota_tree);
 
 	rmb();
 	version = quota_tree->version + 1;
