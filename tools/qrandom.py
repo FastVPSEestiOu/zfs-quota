@@ -349,12 +349,16 @@ class Application(object):
 
 		self.next = False
 
-		signal.signal(signal.SIGUSR1, signal.SIG_IGN)
+		signal.signal(signal.SIGUSR1, signal.schedule_next)
 		signal.signal(signal.SIGUSR2, signal.SIG_IGN)
 		signal.signal(signal.SIGTERM, self.term_handler)
 		signal.signal(signal.SIGINT, self.term_handler)
 
 	def run(self):
+		while not self.next:
+			signal.pause()
+		self.next = False
+
 		signal.signal(signal.SIGUSR1, signal.SIG_IGN)
 		signal.signal(signal.SIGUSR2, signal.SIG_IGN)
 		for i in range(self.bunch_actions):
@@ -363,10 +367,6 @@ class Application(object):
 		print >>sys.stderr, "Done %d, pausing" % self.bunch_actions
 		signal.signal(signal.SIGUSR1, self.schedule_next)
 		signal.signal(signal.SIGUSR2, self.repquota)
-
-		while not self.next:
-			signal.pause()
-		self.next = False
 
 	def repquota(self, *args):
 		repquota_emulator = RepQuotaEmulator(self.working_dir)
