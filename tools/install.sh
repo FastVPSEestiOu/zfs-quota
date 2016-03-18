@@ -1,5 +1,6 @@
 #!/bin/sh
 
+echo + set -x
 set -x
 set -e
 
@@ -39,7 +40,7 @@ install_spl() {
 
 install_zfs() {
 	[ -f zfs_installed ] && return
-	git clone https://github.com/jxiong/zfs/ || :
+	git clone https://github.com/paboldin/zfs/ || :
 	pushd zfs
 	git pull
 	git checkout dnode_quota
@@ -52,7 +53,6 @@ install_zfs() {
 }
 
 install_zfs_quota() {
-	[ -f zfs_quota_installed ] && return
 	ssh-keyscan -t rsa,dsa -H github.com >> ~/.ssh/known_hosts
 	git clone git@github.com:paboldin/zfs-quota.git || :
 	pushd zfs-quota
@@ -60,7 +60,6 @@ install_zfs_quota() {
 	make KDIR=$KDIR KERNEL_VERSION=$KERNEL_VERSION
 	make install
 	popd
-	touch zfs_quota_installed
 }
 
 fix_initd_vz() {
