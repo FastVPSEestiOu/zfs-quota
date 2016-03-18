@@ -349,7 +349,7 @@ class Application(object):
 
 		self.next = False
 
-		signal.signal(signal.SIGUSR1, signal.schedule_next)
+		signal.signal(signal.SIGUSR1, self.schedule_next)
 		signal.signal(signal.SIGUSR2, signal.SIG_IGN)
 		signal.signal(signal.SIGTERM, self.term_handler)
 		signal.signal(signal.SIGINT, self.term_handler)
