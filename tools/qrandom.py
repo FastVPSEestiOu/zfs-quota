@@ -12,6 +12,7 @@ import time
 import random
 import signal
 import subprocess
+import sys
 import tempfile
 import traceback
 
@@ -359,7 +360,7 @@ class Application(object):
 		for i in range(self.bunch_actions):
 			self.qra.one_action()
 
-		print "Done %d, pausing" % self.bunch_actions
+		print >>sys.stderr, "Done %d, pausing" % self.bunch_actions
 		signal.signal(signal.SIGUSR1, self.schedule_next)
 		signal.signal(signal.SIGUSR2, self.repquota)
 
@@ -377,15 +378,15 @@ class Application(object):
 		names = ("user_blocks", "user_inodes",
 				 "group_blocks", "group_inodes")
 
-		print "Diff between our and repquota"
+		print >>sys.stderr, "Diff between our and repquota"
 		for n, d1, d2 in zip(names, our_repquota, sys_repquota):
 			diff = diff_dicts(d1, d2)
 			if diff:
-				print n
-				print json.dumps(diff, sort_keys=True, indent=4)
+				print >>sys.stderr, n
+				print >>sys.stderr, json.dumps(diff, sort_keys=True, indent=4)
 
 	def schedule_next(self, *args):
-		print "Scheduling next %d" % self.bunch_actions
+		print >>sys.stderr, "Scheduling next %d" % self.bunch_actions
 		self.next = True
 		return
 
