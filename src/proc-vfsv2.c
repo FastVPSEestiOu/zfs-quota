@@ -11,6 +11,8 @@
 #include "radix-tree-iter.h"
 #include "tree.h"
 
+#define QTREE_BLOCKSIZE     1024
+
 /* First generic header */
 struct v2_disk_dqheader {
 	__le32 dqh_magic;	/* Magic number identifying file */
@@ -294,7 +296,9 @@ struct qtree_tree_root *build_qtree(int type,
 
 	root->blocks = 1;
 	root->quota_tree = quota_tree;
-	root->data_per_block = 4;
+	root->data_per_block =
+		(QTREE_BLOCKSIZE - sizeof(struct qt_disk_dqdbheader))
+		 / sizeof(struct v2r1_disk_dqblk);
 	root->type = type;
 
 	memset(&root->root_block, 0, sizeof(root->root_block));
@@ -393,18 +397,22 @@ static int zfs_aquotf_vfsv2r1_release(struct inode *inode, struct file *file)
 	return free_qtree(root);
 }
 
-#define QTREE_BLOCKSIZE     1024
+#define V2_INITQMAGICS {\
+	0xd9c01f11,     /* USRQUOTA */\
+	0xd9c01927      /* GRPQUOTA */\
+}
 
 static ssize_t read_proc_quotafile(char *page, off_t blknum,
 				   struct qtree_tree_root *root)
 {
+	static const uint quota_magics[] = V2_INITQMAGICS;
+
 	memset(page, 0, QTREE_BLOCKSIZE);
 	if (blknum == 0) {
 		struct v2_disk_dqheader *dqh = (struct v2_disk_dqheader *)page;
 		struct v2_disk_dqinfo *dq_disk_info;
 
-		dqh->dqh_magic =
-		    root->type == USRQUOTA ? 0xd9c01f11 : 0xd9c01927;
+		dqh->dqh_magic = quota_magics[root->type];
 		dqh->dqh_version = 1;
 
 		dq_disk_info =
