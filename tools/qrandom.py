@@ -16,7 +16,9 @@ import sys
 import tempfile
 import traceback
 
-STARTING_CRED_NUM = 2000
+FIRST_CRED_NUM = 2000
+LAST_CRED_NUM = (1<<32) - 1
+CRED_SEQ_NUM = 1000
 
 ACT_EXIT = 0
 ACT_INFO = 1
@@ -32,9 +34,9 @@ else:
 	def sync():
 		libc.sync()
 
-class SetuidProcess(multiprocessing.Process):
-	DEV_ZERO_FD = open("/dev/zero", "r")
+DEV_ZERO_FD = open("/dev/zero", "r")
 
+class SetuidProcess(multiprocessing.Process):
 	def info(self):
 		print os.getuid()
 		print os.getgid()
@@ -44,7 +46,7 @@ class SetuidProcess(multiprocessing.Process):
 
 	def touch(self, filename, size=1024*1024):
 		with open(filename, "w") as fh:
-			fh.write(self.DEV_ZERO_FD.read(size))
+			fh.write(DEV_ZERO_FD.read(size))
 		return filename
 
 	def unlink(self, filename):
@@ -55,7 +57,7 @@ class SetuidProcess(multiprocessing.Process):
 		for i in range(amount):
 			fname = '%s_%08d' % (prefix, i)
 			with open(fname, "w") as fh:
-				fh.write(self.DEV_ZERO_FD.read(size))
+				fh.write(DEV_ZERO_FD.read(size))
 			fnames.append(fname)
 		return fnames
 
@@ -105,20 +107,21 @@ class SetuidProcess(multiprocessing.Process):
 
 class QuotaRandomAccess(object):
 	def __init__(self, n_uids=10, n_gids=10, interleave_perc=50):
-		uids = [random.randint(STARTING_CRED_NUM, (1<<32) - 1)
+		uids = [random.randint(FIRST_CRED_NUM, LAST_CRED_NUM)
 				for x in range(n_uids)]
-		gids = [random.randint(STARTING_CRED_NUM, (1<<32) - 1)
+		gids = [random.randint(FIRST_CRED_NUM, LAST_CRED_NUM)
 				for x in range(n_gids)]
 		interleave = itertools.islice(itertools.product(uids, gids), 0,
 									  n_uids * n_gids * interleave_perc / 100)
-		creds =  [(uid, STARTING_CRED_NUM) for uid in uids]
-		creds += [(STARTING_CRED_NUM, gid) for gid in gids]
+		creds =  [(uid, FIRST_CRED_NUM) for uid in uids]
+		creds += [(FIRST_CRED_NUM, gid) for gid in gids]
 		creds += interleave
 
 		self.creds = creds
 		self.processes = {}
 		self.pipes = {}
 		self.files = {}
+		self.seq_files = []
 
 	def _start_one(self, cred):
 		parent_conn, child_conn = multiprocessing.Pipe()
@@ -209,6 +212,50 @@ class QuotaRandomAccess(object):
 
 		return True
 
+	@staticmethod
+	def _touch_seq_one(size, fname, uid, gid):
+		pid = os.fork()
+
+		fname = "%s_%d_%d" % (fname, uid, gid)
+
+		if pid:
+			os.waitpid(pid, 0)
+			return fname
+		else:
+			os.setgid(gid)
+			os.setuid(uid)
+			with open(fname, "w", 0) as fh:
+				fh.write(DEV_ZERO_FD.read(size))
+			os._exit(0)
+
+	def _touch_seq(self):
+		fname = tempfile.mktemp(dir='')
+
+		start_uid = random.randint(FIRST_CRED_NUM, LAST_CRED_NUM)
+		start_gid = random.randint(FIRST_CRED_NUM, LAST_CRED_NUM)
+		i = 0
+		seq_files = []
+		while i < CRED_SEQ_NUM:
+			seq_files.append(
+				self._touch_seq_one(i * 16, fname, start_uid + i,
+									start_gid + i)
+			)
+			i += 1
+
+		self.seq_files = seq_files
+
+	def _unlink_seq(self):
+		for fname in self.seq_files:
+			os.unlink(fname)
+		self.seq_files = []
+
+	def _chcred_seq(self):
+		start_uid = random.randint(FIRST_CRED_NUM, LAST_CRED_NUM)
+		start_gid = random.randint(FIRST_CRED_NUM, LAST_CRED_NUM)
+
+		for i, fname in enumerate(self.seq_files):
+			os.chown(fname, start_uid + i, start_gid + i)
+
 	def _chcred(self):
 		cred, filename = self._get_file()
 		if filename is None:
@@ -228,9 +275,12 @@ class QuotaRandomAccess(object):
 
 		return True
 
-	def one_action(self):
+	def one_action(self, i):
 		ACTIONS = (self._touch, self._touch_many, self._unlink,
 				   self._unlink_all, self._chcred)
+		if i % 32 == 0:
+			ACTIONS = (self._touch_seq, self._unlink_seq,
+					   self._chcred_seq)
 		action = random.choice(ACTIONS)
 		ret = None
 		try:
@@ -251,7 +301,7 @@ class QuotaRandomAccess(object):
 
 
 class RepQuotaParser(object):
-	def __init__(self, start_qid=STARTING_CRED_NUM):
+	def __init__(self, start_qid=FIRST_CRED_NUM):
 		self.start_qid = start_qid
 
 	def parse_repquota(self, *options):
@@ -328,7 +378,7 @@ class Application(object):
 		try:
 			os.makedirs(dirname, 0777)
 		except OSError:
-			pass
+			os.chmod(dirname, 0777)
 		os.umask(umask)
 		os.chdir(dirname)
 
@@ -362,9 +412,9 @@ class Application(object):
 		signal.signal(signal.SIGUSR1, signal.SIG_IGN)
 		signal.signal(signal.SIGUSR2, signal.SIG_IGN)
 		for i in range(self.bunch_actions):
-			self.qra.one_action()
+			self.qra.one_action(i)
 
-		print >>sys.stderr, "Done %d, pausing" % self.bunch_actions
+		print >>sys.stderr, "DONE %d, pausing" % self.bunch_actions
 		signal.signal(signal.SIGUSR1, self.schedule_next)
 		signal.signal(signal.SIGUSR2, self.repquota)
 
@@ -379,11 +429,20 @@ class Application(object):
 				 "group_blocks", "group_inodes")
 
 		print >>sys.stderr, "Diff between our and repquota"
+
+		different = []
 		for n, d1, d2 in zip(names, our_repquota, sys_repquota):
 			diff = diff_dicts(d1, d2)
 			if diff:
 				print >>sys.stderr, n
 				print >>sys.stderr, json.dumps(diff, sort_keys=True, indent=4)
+
+				different.append(n)
+
+		if different:
+			print >>sys.stderr, "REPQUOTA FAIL", ", ".join(different)
+		else:
+			print >>sys.stderr, "REPQUOTA OK"
 
 	def schedule_next(self, *args):
 		print >>sys.stderr, "Scheduling next %d" % self.bunch_actions

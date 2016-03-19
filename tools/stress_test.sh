@@ -78,23 +78,31 @@ schedule_qrandom() {
     done
 }
 
-wait_qrandom() {
+wait_log() {
     local ves="$1"
+    local phrase="$2"
+    local timeout="${3-1}"
     while [ -n "$ves" ]; do
         for ve in $ves; do
             local PRIVATE=/$ZFS_ROOT/$ve/disk
-            tail -n1 /$ZFS_ROOT/$ve/disk/log | grep -q Done && \
+            tail -n1 /$ZFS_ROOT/$ve/disk/log | grep -q "$phrase" && \
                 ves="$(echo $ves | sed -e "s/$ve//")"
         done
         sleep 1
     done
 }
 
+wait_qrandom() {
+    wait_log "$1" "DONE"
+}
+
 check_qrandom() {
+    local ves="$1"
     local qrandom_pids="$2"
     for pid in $qrandom_pids; do
         kill -USR2 $pid
     done
+    wait_log "$ves" "REPQUOTA" 4
 }
 
 copy_logs() {
