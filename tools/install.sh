@@ -6,7 +6,8 @@ set -e
 
 install_depends() {
 	yum groupinstall -q -y 'Development Tools'
-	yum install -q -y wget zlib-devel libuuid-devel libblkid-devel
+	yum install -q -y wget zlib-devel libuuid-devel libblkid-devel \
+			  libattr-devel
 }
 
 install_openvz() {
