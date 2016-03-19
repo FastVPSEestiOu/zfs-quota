@@ -10,6 +10,7 @@ ACTIONS_PER_RUN=128
 
 create_one_zfs()
 {
+    zfs destroy $ZFS_ROOT/$1 || :
     zfs create $ZFS_ROOT/$1
 }
 
