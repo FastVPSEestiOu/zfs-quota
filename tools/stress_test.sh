@@ -120,6 +120,7 @@ do_stress_test() {
     qrandom_pids="$(get_qrandom_pids "$ves")"
 
     for iter in $(seq 0 $RUNS); do
+        echo ITER $iter from $RUNS
         schedule_qrandom "$ves" "$qrandom_pids"
         wait_qrandom "$ves" "$qrandom_pids"
         sleep 10
