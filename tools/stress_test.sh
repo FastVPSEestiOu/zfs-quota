@@ -88,7 +88,7 @@ wait_log() {
             tail -n1 /$ZFS_ROOT/$ve/disk/log | grep -q "$phrase" && \
                 ves="$(echo $ves | sed -e "s/$ve//")"
         done
-        sleep 1
+        sleep ${timeout}
     done
 }
 
