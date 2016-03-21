@@ -220,15 +220,14 @@ static int zfs_aquot_buildmntlist(struct ve_struct *ve, struct list_head *head)
 	struct path root;
 	struct zfs_aquot_de *p;
 	int err;
-	printk("%s\n", __func__);
 
 #ifdef CONFIG_VE
 	root = ve->root_path;
 	path_get(&root);
 #else
-	get_fs_root(current->fs, &root)
+	get_fs_root(current->fs, &root);
 #endif
-	    mnt = root.mnt;
+	mnt = root.mnt;
 	spin_lock(&vfsmount_lock);
 	while (1) {
 		list_for_each_entry(p, head, list) {
@@ -270,7 +269,6 @@ static void zfs_aquot_releasemntlist(struct ve_struct *ve,
 				     struct list_head *head)
 {
 	struct zfs_aquot_de *p;
-	printk("%s\n", __func__);
 
 	while (!list_empty(head)) {
 		p = list_entry(head->next, typeof(*p), list);
@@ -482,7 +480,12 @@ int __init zfsquota_proc_init(void)
 {
 	glob_zfsquota_proc =
 	    create_proc_entry("zfsquota", S_IFDIR | S_IRUSR | S_IXUSR,
-			      glob_proc_vz_dir);
+#ifdef CONFIG_VE
+			      glob_proc_vz_dir
+#else /* #ifdef CONFIG_VE */
+			      NULL
+#endif /* #else #ifdef CONFIG_VE */
+			    );
 	glob_zfsquota_proc->proc_iops = &zfs_aquotd_inode_operations;
 	glob_zfsquota_proc->proc_fops = &zfs_aquotd_file_operations;
 
@@ -491,5 +494,11 @@ int __init zfsquota_proc_init(void)
 
 void __exit zfsquota_proc_exit(void)
 {
-	remove_proc_entry("zfsquota", glob_proc_vz_dir);
+	remove_proc_entry("zfsquota", 
+#ifdef CONFIG_VE
+			      glob_proc_vz_dir
+#else /* #ifdef CONFIG_VE */
+			      NULL
+#endif /* #else #ifdef CONFIG_VE */
+			);
 }

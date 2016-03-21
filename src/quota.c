@@ -173,6 +173,7 @@ static void __exit zfsquota_exit(void)
 {
 	zfsquota_proc_exit();
 	zfsquota_tree_exit();
+
 	virtinfo_notifier_unregister(VITYPE_QUOTA, &zfsquota_notifier_block);
 
 	unregister_quota_format(&zfs_quota_empty_vfsold_format);
