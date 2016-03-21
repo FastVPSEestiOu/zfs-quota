@@ -239,7 +239,7 @@ int zqtree_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
 
 static inline uint64_t min_except_zero(uint64_t a, uint64_t b)
 {
-	return min(a || b, b || a);
+	return min(a ? a : b, b ? b : a);
 }
 
 int zqtree_set_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
