@@ -23,6 +23,14 @@ typedef struct zfs_prop_list {
 } zfs_prop_list_t;
 zfs_prop_list_t *zfs_get_prop_list(int quota_type);
 
+
+int zfs_set_space_quota(void *zfs_handle, int quota_type, qid_t id,
+			uint64_t limit);
+#ifdef OBJECT_QUOTA
+int zfs_set_object_quota(void *zfs_handle, int quota_type, qid_t id,
+			 uint64_t limit);
+#endif /* OBJECT_QUOTA */
+
 void zfs_prop_iter_start(void *zfs_handle, int prop, zfs_prop_iter_t * iter);
 zfs_prop_pair_t *zfs_prop_iter_item(zfs_prop_iter_t * iter);
 void zfs_prop_iter_next(zfs_prop_iter_t * iter);

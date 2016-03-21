@@ -237,6 +237,44 @@ int zqtree_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
 	return 0;
 }
 
+static inline uint64_t min_except_zero(uint64_t a, uint64_t b)
+{
+	return min(a || b, b || a);
+}
+
+int zqtree_set_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
+{
+	struct zq_handle_data *handle_data = zqtree_get_data(sb);
+	int ret;
+	uint64_t limit;
+
+	if (!handle_data)
+		return -ENOENT;
+
+	if (di->dqb_valid & QIF_BLIMITS) {
+		limit = 1024 * min_except_zero(di->dqb_bhardlimit,
+					       di->dqb_bsoftlimit);
+		ret = zfs_set_space_quota(handle_data->zfs_handle, type,
+					  id, limit);
+		if (ret)
+			return ret;
+	}
+
+#ifdef OBJECT_QUOTA
+	if (di->dqb_valid & QIF_ILIMITS) {
+		limit = min_except_zero(di->dqb_ihardlimit,
+					di->dqb_isoftlimit);
+		ret = zfs_set_object_quota(handle_data->zfs_handle, type,
+					   id, limit);
+		if (ret)
+			return ret;
+	}
+#endif /* OBJECT_QUOTA */
+
+	return ret;
+}
+
+
 int zqtree_check_qd_version(struct quota_tree *quota_tree, struct quota_data *qd)
 {
 	if (likely(qd->version >= quota_tree->version)) {

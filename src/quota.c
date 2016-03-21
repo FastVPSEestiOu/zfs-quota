@@ -34,7 +34,7 @@ static int zfsquota_set_dqblk(struct super_block *sb, int type,
 			      qid_t id, struct if_dqblk *di)
 {
 	printk("%s\n", __func__);
-	return 0;
+	return zqtree_set_quota_dqblk(sb, type, id, di);
 }
 
 static int zfsquota_get_info(struct super_block *sb, int type,

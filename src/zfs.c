@@ -123,6 +123,48 @@ zfs_prop_list_t *zfs_get_prop_list(int quota_type)
 	}
 }
 
+
+int zfs_set_space_quota(void *zfs_handle, int quota_type, qid_t id,
+			uint64_t limit)
+{
+	zfs_userquota_prop_t type;
+
+	switch (quota_type) {
+	case USRQUOTA:
+		type = ZFS_PROP_USERQUOTA;
+		break;
+	case GRPQUOTA:
+		type = ZFS_PROP_GROUPQUOTA;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return zfs_set_userquota(zfs_handle, type, "", id, limit);
+}
+
+#ifdef OBJECT_QUOTA
+int zfs_set_object_quota(void *zfs_handle, int quota_type, qid_t id,
+			 uint64_t limit)
+{
+	zfs_userquota_prop_t type;
+
+	switch (quota_type) {
+	case USRQUOTA:
+		type = ZFS_PROP_USEROBJQUOTA;
+		break;
+	case GRPQUOTA:
+		type = ZFS_PROP_GROUPOBJQUOTA;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return zfs_set_userquota(zfs_handle, type, "", id, limit);
+}
+#endif /* OBJECT_QUOTA */
+
+
 #define ZFS_PROP_ITER_BUFSIZE (sizeof(zfs_useracct_t) * 128)
 
 static int zfs_prop_iter_next_call(zfs_prop_iter_t * iter)

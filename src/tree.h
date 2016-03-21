@@ -15,6 +15,7 @@ struct quota_tree;
 
 struct quota_data *zqtree_get_quota_data(void *sb, int type, qid_t id);
 int zqtree_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di);
+int zqtree_set_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di);
 
 struct quota_tree *zqtree_get_tree_for_type(void *sb, int type);
 
