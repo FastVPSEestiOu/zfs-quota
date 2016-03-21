@@ -55,7 +55,7 @@ static int quota_data_to_v2r1_disk_dqblk(struct quota_data *quota_data,
 {
 	v2r1->dqb_id = cpu_to_le32(quota_data->qid);
 	v2r1->dqb_bsoftlimit = v2r1->dqb_bhardlimit =
-	    cpu_to_le64(quota_data->space_quota);
+	    cpu_to_le64(quota_data->space_quota / 1024);
 	v2r1->dqb_curspace = cpu_to_le64(quota_data->space_used);
 #ifdef OBJECT_QUOTA
 	v2r1->dqb_ihardlimit = v2r1->dqb_isoftlimit =
