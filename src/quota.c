@@ -182,7 +182,7 @@ static void __exit zfsquota_exit(void)
 
 MODULE_AUTHOR("Pavel Boldin <boldin.pavel@gmail.com>");
 MODULE_DESCRIPTION("ZFS quota <-> OpenVZ proxy");
-MODULE_LICENSE("DUNNO");
+MODULE_LICENSE("GPL");
 
 module_init(zfsquota_init);
 module_exit(zfsquota_exit);
