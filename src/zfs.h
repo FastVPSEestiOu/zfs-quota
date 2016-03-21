@@ -17,6 +17,12 @@ typedef struct zfs_prop_iter {
 	int error;
 } zfs_prop_iter_t;
 
+typedef struct zfs_prop_list {
+	int prop;
+	uintptr_t offset;
+} zfs_prop_list_t;
+zfs_prop_list_t *zfs_get_prop_list(int quota_type);
+
 void zfs_prop_iter_start(void *zfs_handle, int prop, zfs_prop_iter_t * iter);
 zfs_prop_pair_t *zfs_prop_iter_item(zfs_prop_iter_t * iter);
 void zfs_prop_iter_next(zfs_prop_iter_t * iter);

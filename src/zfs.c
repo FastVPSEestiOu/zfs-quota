@@ -1,4 +1,7 @@
 
+#include <linux/quota.h>
+#include <linux/stddef.h>
+
 #include <zfs_config.h>
 #include <sys/zfs_context.h>
 #include <sys/types.h>
@@ -56,6 +59,68 @@ no_obj_quota:
 #endif /* OBJECT_QUOTA */
 
 	return 0;
+}
+
+#define QD_OFFSET(m) offsetof(struct quota_data, m)
+
+zfs_prop_list_t *zfs_get_prop_list(int quota_type)
+{
+	static zfs_prop_list_t usrquota_props[] = {
+		{
+			.prop = ZFS_PROP_USERUSED,
+			.offset = QD_OFFSET(space_used),
+		},
+		{
+			.prop = ZFS_PROP_USERQUOTA,
+			.offset = QD_OFFSET(space_quota),
+		},
+#ifdef OBJECT_QUOTA
+		{
+			.prop = ZFS_PROP_USEROBJUSED,
+			.offset = QD_OFFSET(obj_used),
+		},
+		{
+			.prop = ZFS_PROP_USEROBJQUOTA,
+			.offset = QD_OFFSET(obj_quota),
+		},
+#endif /* OBJECT_QUOTA */
+		{
+			.prop = -1,
+		}
+	};
+	static zfs_prop_list_t grpquota_props[] = {
+		{
+			.prop = ZFS_PROP_GROUPUSED,
+			.offset = QD_OFFSET(space_used),
+		},
+		{
+			.prop = ZFS_PROP_GROUPQUOTA,
+			.offset = QD_OFFSET(space_quota),
+		},
+#ifdef OBJECT_QUOTA
+		{
+			.prop = ZFS_PROP_GROUPOBJUSED,
+			.offset = QD_OFFSET(obj_used),
+		},
+		{
+			.prop = ZFS_PROP_GROUPOBJQUOTA,
+			.offset = QD_OFFSET(obj_quota),
+		},
+#endif /* OBJECT_QUOTA */
+		{
+			.prop = -1,
+		}
+	};
+
+	switch(quota_type) {
+	case USRQUOTA:
+		return usrquota_props;
+	case GRPQUOTA:
+		return grpquota_props;
+	default:
+		WARN(1, "Unknown quota type: %d\n", quota_type);
+		return 0;
+	}
 }
 
 #define ZFS_PROP_ITER_BUFSIZE (sizeof(zfs_useracct_t) * 128)
