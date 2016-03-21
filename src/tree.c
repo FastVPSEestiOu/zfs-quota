@@ -274,22 +274,44 @@ static int _zqtree_zfs_clear(struct quota_tree *quota_tree)
 }
 
 
+static int zqtree_iterate_prop(void *zfs_handle,
+			       struct quota_tree *quota_tree,
+			       zfs_prop_list_t *prop,
+			       uint32_t version)
+{
+	zfs_prop_iter_t iter;
+	zfs_prop_pair_t *pair;
+
+	struct quota_data *qd;
+
+	for (zfs_prop_iter_start(zfs_handle, prop->prop, &iter);
+	     (pair = zfs_prop_iter_item(&iter)); zfs_prop_iter_next(&iter)) {
+
+		qd = zqtree_lookup_quota_data(quota_tree, pair->rid);
+		qd->version = version;
+		*(uint64_t *)((void *)qd + prop->offset) = pair->value;
+	}
+
+	zfs_prop_iter_stop(&iter);
+
+	return zfs_prop_iter_error(&iter);
+}
+
 int zqtree_zfs_sync_tree(void *sb, int type)
 {
 	struct zq_handle_data *handle_data = zqtree_get_data(sb);
-	int err, prop;
-	uint32_t version;
+	int ret = 0;
 	struct quota_tree *quota_tree;
-	struct quota_data *qd;
+	uint32_t version;
 
-	zfs_prop_iter_t iter;
-	zfs_prop_pair_t *pair;
+	zfs_prop_list_t *props, *prop;
 
 
 	quota_tree = zqtree_get_tree_for_type(sb, type);
 	if (!quota_tree)
 		return -ENOENT;
 
+	rmb();
 	version = quota_tree->version;
 
 	if (!mutex_trylock(&quota_tree->mutex)) {
@@ -301,76 +323,21 @@ int zqtree_zfs_sync_tree(void *sb, int type)
 
 	_zqtree_zfs_clear(quota_tree);
 
-	rmb();
-	version = quota_tree->version + 1;
-
-#warning Magic numbers. Hate them.
-
-	prop = type == USRQUOTA ? 0 : 2;
-	for (zfs_prop_iter_start(handle_data->zfs_handle, prop, &iter);
-	     (pair = zfs_prop_iter_item(&iter)); zfs_prop_iter_next(&iter)) {
-
-		qd = zqtree_lookup_quota_data(quota_tree, pair->rid);
-		qd->version = version;
-		qd->space_used = pair->value;
+	version++;
+	props = zfs_get_prop_list(type);
+	for (prop = props; prop->prop >= 0; ++prop) {
+		ret = zqtree_iterate_prop(handle_data->zfs_handle, quota_tree, prop,
+					  version);
+		if (ret)
+			break;
 	}
-
-	if (zfs_prop_iter_error(&iter))
-		goto out;
-
-	prop++;
-
-	for (zfs_prop_iter_reset(prop, &iter);
-	     (pair = zfs_prop_iter_item(&iter)); zfs_prop_iter_next(&iter)) {
-
-		qd = zqtree_lookup_quota_data(quota_tree, pair->rid);
-		qd->version = version;
-		qd->space_quota = pair->value;
-	}
-
-	if (zfs_prop_iter_error(&iter))
-		goto out;
-
-#ifdef OBJECT_QUOTA
-	prop += 3;
-
-	for (zfs_prop_iter_reset(prop, &iter);
-	     (pair = zfs_prop_iter_item(&iter)); zfs_prop_iter_next(&iter)) {
-
-		qd = zqtree_lookup_quota_data(quota_tree, pair->rid);
-		qd->version = version;
-		qd->obj_used = pair->value;
-	}
-
-	if (zfs_prop_iter_error(&iter))
-		goto out;
-
-	prop++;
-
-	for (zfs_prop_iter_reset(prop, &iter);
-	     (pair = zfs_prop_iter_item(&iter)); zfs_prop_iter_next(&iter)) {
-
-		qd = zqtree_lookup_quota_data(quota_tree, pair->rid);
-		qd->version = version;
-		qd->obj_quota = pair->value;
-	}
-
-	if (zfs_prop_iter_error(&iter))
-		goto out;
-
-#endif /* OBJECT_QUOTA */
-
-out:
-	zfs_prop_iter_stop(&iter);
 
 	mutex_unlock(&quota_tree->mutex);
 
 	quota_tree->version = version;
 	wmb();
 
-	err = zfs_prop_iter_error(&iter);
-
-	return err;
+	return ret;
 }
 
 
