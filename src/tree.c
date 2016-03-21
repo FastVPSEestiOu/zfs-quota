@@ -149,13 +149,13 @@ struct quota_data *zqtree_get_filled_quota_data(void *sb, int type, qid_t id)
 void zqtree_print_quota_data(struct quota_data *qd)
 {
 	printk("qd = %p, { .qid = %u, .space_used = %Lu, .space_quota = %Lu"
-#ifdef USEROBJ_QUOTA
+#ifdef OBJECT_QUOTA
 	       ", .obj_used = %Lu, .obj_quota = %Lu"
-#endif
+#endif /* OBJECT_QUOTA */
 	       " }\n", qd, qd->qid, qd->space_used, qd->space_quota
-#ifdef USEROBJ_QUOTA
+#ifdef OBJECT_QUOTA
 	       , qd->obj_used, qd->obj_quota
-#endif
+#endif /* OBJECT_QUOTA */
 	    );
 }
 
@@ -225,14 +225,14 @@ int zqtree_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
 		    quota_data->space_quota / 1024;
 		di->dqb_valid |= QIF_BLIMITS;
 	}
-#ifdef USEROBJ_QUOTA
+#ifdef OBJECT_QUOTA
 	di->dqb_curinodes = quota_data->obj_used;
 	di->dqb_valid |= QIF_INODES;
 	if (quota_data->obj_quota) {
 		di->dqb_ihardlimit = di->dqb_isoftlimit = quota_data->obj_quota;
 		di->dqb_valid |= QIF_ILIMITS;
 	}
-#endif /* USEROBJ_QUOTA */
+#endif /* OBJECT_QUOTA */
 
 	return 0;
 }
@@ -331,7 +331,7 @@ int zqtree_zfs_sync_tree(void *sb, int type)
 	if (zfs_prop_iter_error(&iter))
 		goto out;
 
-#ifdef USEROBJ_QUOTA
+#ifdef OBJECT_QUOTA
 	prop += 3;
 
 	for (zfs_prop_iter_reset(prop, &iter);
@@ -358,7 +358,7 @@ int zqtree_zfs_sync_tree(void *sb, int type)
 	if (zfs_prop_iter_error(&iter))
 		goto out;
 
-#endif
+#endif /* OBJECT_QUOTA */
 
 out:
 	zfs_prop_iter_stop(&iter);

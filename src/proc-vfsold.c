@@ -29,10 +29,10 @@ static int quota_data_to_v1_disk_dqblk(struct quota_data *quota_data,
 	v1->dqb_bsoftlimit = v1->dqb_bhardlimit =
 	    quota_data->space_quota / 1024;
 	v1->dqb_curblocks = quota_data->space_used / 1024;
-#ifdef USEROBJ_QUOTA
+#ifdef OBJECT_QUOTA
 	v1->dqb_ihardlimit = v1->dqb_isoftlimit = quota_data->obj_quota;
 	v1->dqb_curinodes = quota_data->obj_used;
-#endif
+#endif /* OBJECT_QUOTA */
 	v1->dqb_btime = v1->dqb_itime = 0;
 
 	return sizeof(*v1);

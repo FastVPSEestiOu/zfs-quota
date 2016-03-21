@@ -6,9 +6,9 @@ struct quota_data {
 	qid_t qid;
 	uint32_t version;
 	uint64_t space_used, space_quota;
-#ifdef USEROBJ_QUOTA
+#ifdef	OBJECT_QUOTA
 	uint64_t obj_used, obj_quota;
-#endif				/* USEROBJ_QUOTA */
+#endif	/* OBJECT_QUOTA */
 };
 
 struct quota_tree;

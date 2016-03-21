@@ -31,7 +31,7 @@ int zfsquota_fill_quotadata(void *zfs_handle, struct quota_data *quota_data,
 	if (err)
 		return err;
 
-#ifdef USEROBJ_QUOTA
+#ifdef OBJECT_QUOTA
 	err = zfs_userspace_one(zfs_handle,
 				type ==
 				USRQUOTA ? ZFS_PROP_USEROBJUSED :
@@ -53,7 +53,7 @@ int zfsquota_fill_quotadata(void *zfs_handle, struct quota_data *quota_data,
 
 no_obj_quota:
 	;
-#endif /* USEROBJ_QUOTA */
+#endif /* OBJECT_QUOTA */
 
 	return 0;
 }
