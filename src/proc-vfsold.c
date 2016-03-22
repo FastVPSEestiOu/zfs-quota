@@ -75,27 +75,14 @@ static int read_proc_quotafile(char *page, off_t off, int count,
 	return res;
 }
 
-static ssize_t zfs_aquotf_vfsold_read(struct file *file,
-				      char __user * buf, size_t size,
-				      loff_t * ppos)
+static int zfs_aquotf_vfsold_open(struct inode *inode, struct file *file)
 {
-	char *page;
-	size_t bufsize;
-	ssize_t l, l2, copied;
-	struct inode *inode;
+	int err, type;
 	struct block_device *bdev;
 	struct super_block *sb;
-	struct quota_tree *root;
-	int err, type;
-	printk("%s\n", __func__);
-
-	err = -ENOMEM;
-	page = (char *)__get_free_page(GFP_KERNEL);
-	if (page == NULL)
-		goto out_err;
+	struct quota_tree *quota_tree;
 
 	err = -ENODEV;
-	inode = file->f_dentry->d_inode;
 	bdev = bdget(zfs_aquot_getidev(inode));
 	if (bdev == NULL)
 		goto out_err;
@@ -106,7 +93,44 @@ static ssize_t zfs_aquotf_vfsold_read(struct file *file,
 		goto out_err;
 	drop_super(sb);
 
-	root = zqtree_get_tree_for_type(sb, type);
+	quota_tree = zqtree_get_sync_quota_tree(sb, type);
+	file->private_data = quota_tree;
+
+	return 0;
+
+out_err:
+	return err;
+}
+
+static int zfs_aquotf_vfsold_release(struct inode *inode, struct file *file)
+{
+	struct quota_tree *quota_tree;
+	int type;
+
+	type = PROC_I(inode)->fd - 1;
+	quota_tree = file->private_data;
+	file->private_data = NULL;
+	zqtree_put_quota_tree(quota_tree, type);
+
+	return 0;
+}
+
+
+static ssize_t zfs_aquotf_vfsold_read(struct file *file,
+				      char __user * buf, size_t size,
+				      loff_t * ppos)
+{
+	char *page;
+	size_t bufsize;
+	ssize_t l, l2, copied;
+	struct quota_tree *quota_tree = file->private_data;
+	int err;
+	printk("%s\n", __func__);
+
+	err = -ENOMEM;
+	page = (char *)__get_free_page(GFP_KERNEL);
+	if (page == NULL)
+		goto out_err;
 
 	copied = 0;
 	l = l2 = 0;
@@ -115,7 +139,7 @@ static ssize_t zfs_aquotf_vfsold_read(struct file *file,
 		if (bufsize <= 0)
 			break;
 
-		l = read_proc_quotafile(page, *ppos, bufsize, root);
+		l = read_proc_quotafile(page, *ppos, bufsize, quota_tree);
 		if (l <= 0)
 			break;
 
@@ -145,7 +169,9 @@ out_err:
 }
 
 static struct file_operations zfs_aquotf_vfsold_file_operations = {
+	.open = zfs_aquotf_vfsold_open,
 	.read = &zfs_aquotf_vfsold_read,
+	.release = zfs_aquotf_vfsold_release
 };
 
 int zfs_aquotq_vfsold_lookset(struct inode *inode)
