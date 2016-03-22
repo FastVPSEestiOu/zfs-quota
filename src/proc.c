@@ -4,6 +4,11 @@
 #include <linux/proc_fs.h>
 #include <linux/mount.h>
 
+#ifndef CONFIG_VE
+#	include <linux/fs_struct.h>
+#	include <linux/sched.h>
+#endif /* #ifndef CONFIG_VE */
+
 #include <linux/uaccess.h>
 #include <linux/ctype.h>
 
@@ -18,6 +23,13 @@ static const char aquota_group[] = "aquota.group";
 static struct proc_dir_entry *glob_zfsquota_proc;
 
 extern struct quotactl_ops zfsquota_q_cops;
+
+#ifndef CONFIG_VE
+struct ve_struct {};
+static inline void get_fs_root(struct fs_struct *fs, struct path *root)
+{
+}
+#endif /* #ifndef CONFIG_VE */
 
 /* ----------------------------------------------------------------------
  *
@@ -224,9 +236,9 @@ static int zfs_aquot_buildmntlist(struct ve_struct *ve, struct list_head *head)
 #ifdef CONFIG_VE
 	root = ve->root_path;
 	path_get(&root);
-#else
+#else /* #ifdef CONFIG_VE */
 	get_fs_root(current->fs, &root);
-#endif
+#endif /* #else #ifdef CONFIG_VE */
 	mnt = root.mnt;
 	spin_lock(&vfsmount_lock);
 	while (1) {
@@ -292,11 +304,11 @@ static int zfs_aquotd_readdir(struct file *file, void *data, filldir_t filler)
 
 	i = 0;
 	n = file->f_pos;
-	ve = file->f_dentry->d_sb->s_type->owner_env;
-	old_ve = set_exec_env(ve);
 
 	INIT_LIST_HEAD(&mntlist);
 #ifdef CONFIG_VE
+	ve = file->f_dentry->d_sb->s_type->owner_env;
+	old_ve = set_exec_env(ve);
 	/*
 	 * The only reason of disabling readdir for the host system is that
 	 * this readdir can be slow and CPU consuming with large number of VPSs
@@ -304,6 +316,8 @@ static int zfs_aquotd_readdir(struct file *file, void *data, filldir_t filler)
 	 */
 	err = ve_is_super(ve);
 #else
+	ve = NULL;
+	(void) old_ve;
 	err = 0;
 #endif
 	if (!err) {
@@ -346,7 +360,9 @@ out_fill:
 	file->f_pos = i;
 out_err:
 	zfs_aquot_releasemntlist(ve, &mntlist);
+#ifdef CONFIG_VE
 	(void)set_exec_env(old_ve);
+#endif
 	return err;
 }
 
@@ -385,9 +401,9 @@ static struct dentry *zfs_aquotd_lookup(struct inode *dir,
 
 	printk("%s\n", __func__);
 
+#ifdef CONFIG_VE
 	ve = dir->i_sb->s_type->owner_env;
 	old_ve = set_exec_env(ve);
-#ifdef CONFIG_VE
 	/*
 	 * Lookup is much lighter than readdir, so it can be allowed for the
 	 * host system.  But it would be strange to be able to do lookup only
@@ -395,7 +411,9 @@ static struct dentry *zfs_aquotd_lookup(struct inode *dir,
 	 */
 	if (ve_is_super(ve))
 		goto out;
-#endif
+#else /* #ifdef CONFIG_VE */
+	(void) ve; (void) old_ve;
+#endif /* #else #ifdef CONFIG_VE */
 
 	dev = 0;
 	l = dentry->d_name.len;
@@ -431,11 +449,15 @@ static struct dentry *zfs_aquotd_lookup(struct inode *dir,
 		unlock_new_inode(inode);
 
 	d_add(dentry, inode);
+#ifdef CONFIG_VE
 	(void)set_exec_env(old_ve);
+#endif /* #ifdef CONFIG_VE */
 	return NULL;
 
 out:
+#ifdef CONFIG_VE
 	(void)set_exec_env(old_ve);
+#endif /* #ifdef CONFIG_VE */
 	return ERR_PTR(-ENOENT);
 }
 
@@ -446,8 +468,9 @@ static int zfs_aquotd_getattr(struct vfsmount *mnt, struct dentry *dentry,
 	struct list_head mntlist, *pos;
 
 	generic_fillattr(dentry->d_inode, stat);
-	ve = dentry->d_sb->s_type->owner_env;
 #ifdef CONFIG_VE
+	ve = dentry->d_sb->s_type->owner_env;
+
 	/*
 	 * The only reason of disabling getattr for the host system is that
 	 * this getattr can be slow and CPU consuming with large number of VPSs
@@ -455,14 +478,21 @@ static int zfs_aquotd_getattr(struct vfsmount *mnt, struct dentry *dentry,
 	 */
 	if (ve_is_super(ve))
 		return 0;
-#endif
+#else /* #ifdef CONFIG_VE */
+	ve = NULL;
+	(void) old_ve;
+#endif /* #else #ifdef CONFIG_VE */
 	INIT_LIST_HEAD(&mntlist);
+#ifdef CONFIG_VE
 	old_ve = set_exec_env(ve);
+#endif /* #ifdef CONFIG_VE */
 	if (!zfs_aquot_buildmntlist(ve, &mntlist))
 		list_for_each(pos, &mntlist)
 		    stat->nlink++;
 	zfs_aquot_releasemntlist(ve, &mntlist);
+#ifdef CONFIG_VE
 	(void)set_exec_env(old_ve);
+#endif /* #ifdef CONFIG_VE */
 	return 0;
 }
 

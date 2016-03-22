@@ -1,9 +1,15 @@
 
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/vzquota.h>
-#include <linux/virtinfo.h>
-#include <linux/ve_proto.h>
+
+#ifdef CONFIG_VE
+#	include <linux/vzquota.h>
+#	include <linux/virtinfo.h>
+#	include <linux/ve_proto.h>
+#else /* #ifdef CONFIG_VE */
+#	include <linux/fs.h>
+#	include <linux/quota.h>
+#endif /* #else #ifdef CONFIG_VE */
 
 #include "tree.h"
 
@@ -52,12 +58,14 @@ static int zfsquota_set_info(struct super_block *sb, int type,
 	return 0;
 }
 
+#ifdef CONFIG_QUOTA_COMPAT
 static int zfsquota_get_quoti(struct super_block *sb, int type, qid_t idx,
 			      struct v2_disk_dqblk __user * dqblk)
 {
 	printk("%s\n", __func__);
 	return 0;
 }
+#endif /* #ifdef CONFIG_QUOTA_COMPAT */
 
 static int zfsquota_sync(struct super_block *sb, int type)
 {
@@ -95,9 +103,15 @@ struct quota_format_type zfs_quota_empty_vfsv2_format = {
 	.qf_owner = THIS_MODULE,
 };
 
-static int zfsquota_notify_quota_on(struct super_block *sb)
+int zfsquota_notify_quota_on(struct super_block *sb)
 {
-	if (strcmp(sb->s_op->get_quota_root(sb)->i_sb->s_type->name, "zfs")) {
+	const char *fsname;
+#ifdef CONFIG_VE
+	fsname = sb->s_op->get_quota_root(sb)->i_sb->s_type->name;
+#else /* #ifdef CONFIG_VE */
+	fsname = sb->s_root->d_inode->i_sb->s_type->name;
+#endif /* #else #ifdef CONFIG_VE */
+	if (strcmp(fsname, "zfs")) {
 		return NOTIFY_OK;
 	}
 	if (!try_module_get(THIS_MODULE))
@@ -120,8 +134,9 @@ static int zfsquota_notify_quota_on(struct super_block *sb)
 
 	return NOTIFY_OK;
 }
+EXPORT_SYMBOL(zfsquota_notify_quota_on);
 
-static int zfsquota_notify_quota_off(struct super_block *sb)
+int zfsquota_notify_quota_off(struct super_block *sb)
 {
 	if (sb->s_qcop != &zfsquota_q_cops) {
 		return NOTIFY_OK;
@@ -131,7 +146,9 @@ static int zfsquota_notify_quota_off(struct super_block *sb)
 
 	return NOTIFY_OK;
 }
+EXPORT_SYMBOL(zfsquota_notify_quota_off);
 
+#ifdef CONFIG_VE
 static int zfsquota_notifier_call(struct vnotifier_block *self,
 				  unsigned long n, void *data, int err)
 {
@@ -152,6 +169,7 @@ struct vnotifier_block zfsquota_notifier_block = {
 	.notifier_call = zfsquota_notifier_call,
 	.priority = INT_MAX / 2
 };
+#endif /* #ifdef CONFIG_VE */
 
 int __init zfsquota_proc_init(void);
 void __exit zfsquota_proc_exit(void);
@@ -163,7 +181,9 @@ static int __init zfsquota_init(void)
 	zfsquota_proc_init();
 	zfsquota_tree_init();
 
+#ifdef CONFIG_VE
 	virtinfo_notifier_register(VITYPE_QUOTA, &zfsquota_notifier_block);
+#endif /* #ifdef CONFIG_VE */
 
 	register_quota_format(&zfs_quota_empty_vfsold_format);
 	return 0;
@@ -174,7 +194,9 @@ static void __exit zfsquota_exit(void)
 	zfsquota_proc_exit();
 	zfsquota_tree_exit();
 
+#ifdef CONFIG_VE
 	virtinfo_notifier_unregister(VITYPE_QUOTA, &zfsquota_notifier_block);
+#endif /* #ifdef CONFIG_VE */
 
 	unregister_quota_format(&zfs_quota_empty_vfsold_format);
 

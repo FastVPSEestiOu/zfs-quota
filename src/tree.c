@@ -42,7 +42,11 @@ int zqtree_init_superblock(struct super_block *sb)
 	}
 
 	data = kzalloc(sizeof(struct zq_handle_data), GFP_KERNEL);
+#ifdef CONFIG_VE
 	data->zfs_handle = sb->s_op->get_quota_root(sb)->i_sb->s_fs_info;
+#else /* #ifdef CONFIG_VE */
+	data->zfs_handle = sb->s_root->d_inode->i_sb->s_fs_info;
+#endif /* #else #ifdef CONFIG_VE */
 	for (i = 0; i < MAXQUOTAS; ++i) {
 		mutex_init(&data->quota[i].mutex);
 	}

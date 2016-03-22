@@ -1,5 +1,4 @@
 
-#include <linux/quota.h>
 #include <linux/stddef.h>
 
 #include <zfs_config.h>
