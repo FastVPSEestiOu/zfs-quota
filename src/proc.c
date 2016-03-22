@@ -26,8 +26,9 @@ extern struct quotactl_ops zfsquota_q_cops;
 
 #ifndef CONFIG_VE
 struct ve_struct {};
-static inline void get_fs_root(struct fs_struct *fs, struct path *root)
+static struct ve_struct *set_exec_env(struct ve_struct *ve)
 {
+	return ve;
 }
 #endif /* #ifndef CONFIG_VE */
 
@@ -226,6 +227,7 @@ struct zfs_aquot_de {
 	struct vfsmount *mnt;
 };
 
+#ifdef CONFIG_VE
 static int zfs_aquot_buildmntlist(struct ve_struct *ve, struct list_head *head)
 {
 	struct vfsmount *mnt;
@@ -233,12 +235,9 @@ static int zfs_aquot_buildmntlist(struct ve_struct *ve, struct list_head *head)
 	struct zfs_aquot_de *p;
 	int err;
 
-#ifdef CONFIG_VE
 	root = ve->root_path;
 	path_get(&root);
-#else /* #ifdef CONFIG_VE */
-	get_fs_root(current->fs, &root);
-#endif /* #else #ifdef CONFIG_VE */
+
 	mnt = root.mnt;
 	spin_lock(&vfsmount_lock);
 	while (1) {
@@ -289,6 +288,41 @@ static void zfs_aquot_releasemntlist(struct ve_struct *ve,
 		kfree(p);
 	}
 }
+#else /* #ifdef CONFIG_VE */
+int zqtree_next_mount(void *prev_sb, struct vfsmount **mnt, void **next_sb);
+
+#warning A lot of races got here this night...
+static int zfs_aquot_buildmntlist(struct ve_struct *ve, struct list_head *head)
+{
+	void *sb = NULL;
+	struct vfsmount *mnt;
+	struct zfs_aquot_de *p;
+	int err;
+
+	while (zqtree_next_mount(sb, &mnt, &sb)) {
+		err = -ENOMEM;
+		p = kmalloc(sizeof(*p), GFP_ATOMIC);
+		if (p == NULL)
+			goto out;
+		list_add_tail(&p->list, head);
+	}
+out:
+	return err;
+}
+
+static void zfs_aquot_releasemntlist(struct ve_struct *ve,
+				     struct list_head *head)
+{
+	struct zfs_aquot_de *p;
+
+	while (!list_empty(head)) {
+		p = list_entry(head->next, typeof(*p), list);
+		mntput(p->mnt);
+		list_del(&p->list);
+		kfree(p);
+	}
+}
+#endif /* #else #ifdef CONFIG_VE */
 
 static int zfs_aquotd_readdir(struct file *file, void *data, filldir_t filler)
 {
@@ -309,17 +343,19 @@ static int zfs_aquotd_readdir(struct file *file, void *data, filldir_t filler)
 #ifdef CONFIG_VE
 	ve = file->f_dentry->d_sb->s_type->owner_env;
 	old_ve = set_exec_env(ve);
+
 	/*
 	 * The only reason of disabling readdir for the host system is that
 	 * this readdir can be slow and CPU consuming with large number of VPSs
 	 * (or just mount points).
 	 */
 	err = ve_is_super(ve);
-#else
+#else /* #ifdef CONFIG_VE */
 	ve = NULL;
 	(void) old_ve;
+
 	err = 0;
-#endif
+#endif /* #else #ifdef CONFIG_VE */
 	if (!err) {
 		err = zfs_aquot_buildmntlist(ve, &mntlist);
 		if (err)
@@ -342,6 +378,7 @@ static int zfs_aquotd_readdir(struct file *file, void *data, filldir_t filler)
 
 	list_for_each_entry(de, &mntlist, list) {
 		sb = de->mnt->mnt_sb;
+
 		if (sb->s_qcop != &zfsquota_q_cops)
 			continue;
 
@@ -360,9 +397,7 @@ out_fill:
 	file->f_pos = i;
 out_err:
 	zfs_aquot_releasemntlist(ve, &mntlist);
-#ifdef CONFIG_VE
-	(void)set_exec_env(old_ve);
-#endif
+	(void) set_exec_env(old_ve);
 	return err;
 }
 
@@ -449,15 +484,11 @@ static struct dentry *zfs_aquotd_lookup(struct inode *dir,
 		unlock_new_inode(inode);
 
 	d_add(dentry, inode);
-#ifdef CONFIG_VE
 	(void)set_exec_env(old_ve);
-#endif /* #ifdef CONFIG_VE */
 	return NULL;
 
 out:
-#ifdef CONFIG_VE
 	(void)set_exec_env(old_ve);
-#endif /* #ifdef CONFIG_VE */
 	return ERR_PTR(-ENOENT);
 }
 
@@ -483,16 +514,12 @@ static int zfs_aquotd_getattr(struct vfsmount *mnt, struct dentry *dentry,
 	(void) old_ve;
 #endif /* #else #ifdef CONFIG_VE */
 	INIT_LIST_HEAD(&mntlist);
-#ifdef CONFIG_VE
 	old_ve = set_exec_env(ve);
-#endif /* #ifdef CONFIG_VE */
 	if (!zfs_aquot_buildmntlist(ve, &mntlist))
 		list_for_each(pos, &mntlist)
 		    stat->nlink++;
 	zfs_aquot_releasemntlist(ve, &mntlist);
-#ifdef CONFIG_VE
 	(void)set_exec_env(old_ve);
-#endif /* #ifdef CONFIG_VE */
 	return 0;
 }
 

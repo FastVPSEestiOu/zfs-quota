@@ -4,6 +4,7 @@
 #include <linux/quota.h>
 #include <linux/slab.h>
 #include <linux/sched.h>
+#include <linux/mount.h>
 
 #include "zfs.h"
 #include "radix-tree-iter.h"
@@ -11,7 +12,8 @@
 
 #define ZQTREE_TAG_STALE	0
 
-struct radix_tree_root zq_handle_data_tree;
+#warning protect this with a mutex
+static struct radix_tree_root zq_handle_data_tree;
 struct kmem_cache *quota_data_cachep = NULL;
 
 struct quota_tree {
@@ -21,6 +23,7 @@ struct quota_tree {
 };
 
 struct zq_handle_data {
+	struct super_block *sb;
 	void *zfs_handle;
 
 	struct quota_tree quota[MAXQUOTAS];
@@ -42,11 +45,13 @@ int zqtree_init_superblock(struct super_block *sb)
 	}
 
 	data = kzalloc(sizeof(struct zq_handle_data), GFP_KERNEL);
+	data->sb = sb;
 #ifdef CONFIG_VE
 	data->zfs_handle = sb->s_op->get_quota_root(sb)->i_sb->s_fs_info;
 #else /* #ifdef CONFIG_VE */
 	data->zfs_handle = sb->s_root->d_inode->i_sb->s_fs_info;
 #endif /* #else #ifdef CONFIG_VE */
+
 	for (i = 0; i < MAXQUOTAS; ++i) {
 		mutex_init(&data->quota[i].mutex);
 	}
@@ -73,6 +78,41 @@ int zqtree_free_superblock(struct super_block *sb)
 static inline struct zq_handle_data *zqtree_get_data(void *sb)
 {
 	return radix_tree_lookup(&zq_handle_data_tree, (unsigned long)sb);
+}
+
+struct zqfs_fs_info {
+	union {
+		struct vfsmount *real_mnt;
+		struct nameidata *nd;
+	};
+	char fake_dev_name[PATH_MAX];
+};
+
+int zqtree_next_mount(void *prev_sb, struct vfsmount **mnt, void **next_sb)
+{
+	struct zq_handle_data *p[1];
+	struct super_block *sb;
+	int ret;
+
+	ret = radix_tree_gang_lookup(&zq_handle_data_tree, (void **)p, 1,
+				     (unsigned long)prev_sb);
+	if (!ret)
+		return 0;
+
+	sb = p[0]->sb;
+	if (next_sb)
+		*next_sb = sb;
+
+	if (!strcmp(sb->s_type->name, "simfs")) {
+		*mnt = mntget((struct vfsmount *)sb->s_fs_info);
+	} else if (!strcmp(sb->s_type->name, "zqfs")) {
+		*mnt = mntget(((struct zqfs_fs_info *)sb->s_fs_info)->real_mnt);
+	} else {
+		*mnt = NULL;
+		return 0;
+	}
+
+	return 1;
 }
 
 struct quota_tree *zqtree_get_tree_for_type(void *sb, int type)
