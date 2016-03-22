@@ -5,4 +5,6 @@
 !.gitignore
 src/Module.symvers
 src/modules.order
+zqfs/Module.symvers
+zqfs/modules.order
 tags
