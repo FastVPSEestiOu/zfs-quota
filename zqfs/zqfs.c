@@ -1,6 +1,11 @@
 /*
  *  fs/zqfs.c
  *
+ *  Copyright (C) 2016 Pavel Boldin
+ *  All rights reserved.
+ *
+ *  Based on fs/simfs.c with:
+ *
  *  Copyright (C) 2005  SWsoft
  *  All rights reserved.
  *  
@@ -31,8 +36,17 @@
 
 #define SIMFS_GET_LOWER_FS_SB(sb) sb->s_root->d_sb
 
+struct zqfs_fs_info {
+	union {
+		struct vfsmount *real_mnt;
+		struct nameidata *nd;
+	};
+	char fake_dev_name[PATH_MAX];
+};
+
 static struct super_operations zqfs_super_ops;
 
+#ifdef CONFIG_VE
 static void quota_get_stat(struct inode *ino, struct kstatfs *buf)
 {
 	int err;
@@ -101,6 +115,12 @@ static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 	quota_get_stat(dentry->d_inode, buf);
 	return 0;
 }
+#else /* #ifdef CONFIG_VE */
+static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
+{
+	return 0;
+}
+#endif /* #else #ifdef CONFIG_VE */
 
 static int zqfs_start_write(struct super_block *sb, int level, bool wait)
 {
@@ -130,7 +150,7 @@ static void zqfs_end_write(struct super_block *sb, int level)
 	__sb_end_write(root_sb, level);
 }
 
-#ifdef CONFIG_QUOTA
+#if defined(CONFIG_QUOTA) && defined(CONFIG_VE)
 static struct inode *zqfs_quota_root(struct super_block *sb)
 {
 	return sb->s_root->d_inode;
@@ -167,20 +187,17 @@ static void zqfs_free_blkdev(struct super_block *sb)
 	}
 }
 
+int zfsquota_notify_quota_on(struct super_block *sb);
+int zfsquota_notify_quota_off(struct super_block *sb);
+
 static void zqfs_quota_init(struct super_block *sb)
 {
-	struct virt_info_quota viq;
-
-	viq.super = sb;
-	virtinfo_notifier_call(VITYPE_QUOTA, VIRTINFO_QUOTA_ON, &viq);
+	(void) zfsquota_notify_quota_on(sb);
 }
 
 static void zqfs_quota_free(struct super_block *sb)
 {
-	struct virt_info_quota viq;
-
-	viq.super = sb;
-	virtinfo_notifier_call(VITYPE_QUOTA, VIRTINFO_QUOTA_OFF, &viq);
+	(void) zfsquota_notify_quota_off(sb);
 }
 
 static void zqfs_show_type(struct seq_file *m, struct super_block *sb)
@@ -195,6 +212,10 @@ static void zqfs_show_type(struct seq_file *m, struct super_block *sb)
 
 static int zqfs_show_options(struct seq_file *m, struct vfsmount *mnt)
 {
+	struct zqfs_fs_info *fs_info = mnt->mnt_sb->s_fs_info;
+
+	seq_printf(m, ",dev=%s,fsroot=%s",
+		   fs_info->fake_dev_name, mnt->mnt_devname);
 #ifdef CONFIG_QUOTA
 	if (sb_has_quota_loaded(mnt->mnt_sb, USRQUOTA))
 		seq_puts(m, ",usrquota");
@@ -206,11 +227,9 @@ static int zqfs_show_options(struct seq_file *m, struct vfsmount *mnt)
 
 static int zqfs_show_devname(struct seq_file *m, struct vfsmount *mnt)
 {
-	if (ve_is_super(get_exec_env()) && mnt->mnt_devname)
-		seq_escape(m, mnt->mnt_devname, " \t\n\\");
-	else
-		seq_puts(m, "zqfs");
+	struct zqfs_fs_info *fs_info = mnt->mnt_sb->s_fs_info;
 
+	seq_escape(m, fs_info->fake_dev_name, " \t\n\\");
 	return 0;
 }
 
@@ -219,7 +238,9 @@ static struct super_operations zqfs_super_ops = {
 	.show_type	= &zqfs_show_type,
 	.show_options	= &zqfs_show_options,
 	.show_devname   = &zqfs_show_devname,
+#	ifdef CONFIG_VE /* This stuff is VZ-specific */
 	.get_quota_root	= &zqfs_quota_root,
+#	endif /* #ifdef CONFIG_VE */
 #endif
 	.statfs = zqfs_statfs,
 	.start_write	= &zqfs_start_write,
@@ -315,59 +336,93 @@ static void zqfs_free_export_op(struct super_block *sb)
 
 static int zqfs_fill_super(struct super_block *s, void *data, int silent)
 {
-	struct nameidata *nd = data;
+	struct zqfs_fs_info *fs_info = data;
+	struct nameidata *nd = fs_info->nd;
 	int err;
 
 	err = zqfs_init_export_op(s, nd->path.dentry->d_sb);
 	if (err)
-		goto out;
+		goto out_err;
 
 	err = zqfs_init_blkdev(s);
 	if (err)
-		goto out;
+		goto out_err;
 
-	err = 0;
-	s->s_fs_info = mntget(nd->path.mnt);
+	fs_info->real_mnt = mntget(nd->path.mnt);
+
+	s->s_fs_info = fs_info;
 	s->s_root = dget(nd->path.dentry);
 	s->s_op = &zqfs_super_ops;
 
 	zqfs_quota_init(s);
-out:
+	return 0;
+
+out_err:
+	kfree(fs_info);
 	return err;
 }
 
 static int zqfs_get_sb(struct file_system_type *type, int flags,
-		const char *dev_name, void *opt, struct vfsmount *mnt)
+		const char *dev_name, void *data, struct vfsmount *mnt)
 {
 	int err;
 	struct nameidata nd;
+	struct zqfs_fs_info *fs_info = NULL;
+	char *root = data;
+	char *devname;
 
 	err = -EINVAL;
-	if (opt == NULL)
+	if (root == NULL)
 		goto out;
 
-	err = path_lookup(opt, LOOKUP_FOLLOW|LOOKUP_DIRECTORY, &nd);
+	devname = strchr(root, ',');
+	if (devname == NULL)
+		goto out;
+
+	*devname++ = 0;
+	if (*devname == 0)
+		goto out;
+
+	err = path_lookup(root, LOOKUP_FOLLOW|LOOKUP_DIRECTORY, &nd);
 	if (err)
 		goto out;
 
-	err = get_sb_nodev(type, flags, &nd, zqfs_fill_super, mnt);
+	err = -ENOMEM;
+	fs_info = kzalloc(sizeof(*fs_info), GFP_KERNEL);
+	if (fs_info == NULL)
+		goto out_mem;
+
+	strncpy(fs_info->fake_dev_name, devname,
+		sizeof(fs_info->fake_dev_name));
+	fs_info->nd = &nd;
+
+	err = get_sb_nodev(type, flags, fs_info, zqfs_fill_super, mnt);
 
 	path_put(&nd.path);
+
+out_mem:
+	if (err) {
+		kfree(fs_info);
+	}
 out:
 	return err;
 }
 
 static void zqfs_kill_sb(struct super_block *sb)
 {
+	struct zqfs_fs_info *fs_info = sb->s_fs_info;
+
 	dput(sb->s_root);
 	sb->s_root = NULL;
-	mntput((struct vfsmount *)(sb->s_fs_info));
+	mntput(fs_info->real_mnt);
 	zqfs_free_export_op(sb);
 
 	zqfs_quota_free(sb);
 	zqfs_free_blkdev(sb);
 
 	kill_anon_super(sb);
+
+	kfree(fs_info);
 }
 
 static struct file_system_type zq_fs_type = {
@@ -394,9 +449,9 @@ static void __exit exit_zqfs(void)
 	unregister_filesystem(&zq_fs_type);
 }
 
-MODULE_AUTHOR("SWsoft <info@sw-soft.com>");
-MODULE_DESCRIPTION("Open Virtuozzo Simulation of File System");
-MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Pavel Boldin <boldin.pavel@gmail.com>");
+MODULE_DESCRIPTION("ZFS Quota Filesystem Layer");
+MODULE_LICENSE("GPL");
 
 module_init(init_zqfs);
 module_exit(exit_zqfs);
