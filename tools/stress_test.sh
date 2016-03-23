@@ -1,6 +1,8 @@
 #!/bin/sh
 
-set -e
+if [[ "$(basename -- "$0")" == "stress_test.sh" ]]; then
+	set -e
+fi
 
 ZFS_ROOT=nirvana
 REPO=~/stage/zfs-quota/
@@ -117,17 +119,19 @@ check_qrandom() {
 
 ve_repquota() {
     local ve=$1
-    local ofname=$(mktemp repquota-$ve.XXXXXXXXXX)
-    vzctl exec $v repquota -n /dev/simfs | \
-	sed -n 's/^#//; s/--//; /^$/d; /2000/,$p' o2 | \
+    local args=$2
+    local ofname=$(mktemp --tmpdir repquota-$ve.XXXXXXXXXX)
+    vzctl exec $ve repquota $args -n /dev/simfs | \
+	sed -n 's/^#//; s/--//; /^$/d; /2000/,$p' | \
 	sort -n | awk '{ print $1, $2, $3, $5, $6 }' > $ofname
     echo $ofname
 }
 
-ve_zfsuserspace() {
+ve_zfs_space() {
    local ve=$1
-   local ofname=$(mktemp zfsuserspace-$ve.XXXXXXXXXX)
-   zfs userspace /$ZFS_ROOT/$ve -Hinp | \
+   local cmd=${2-userspace}
+   local ofname=$(mktemp --tmpdir zfsuserspace-$ve.XXXXXXXXXX)
+   zfs $cmd $ZFS_ROOT/$ve -Hinp | \
 	sed 's/POSIX User//' | \
 	awk '$1 >= 2000 { print $1, int(($2 + 1023)/1024),
 			  int(($3 + 1023)/1024), $4, $5+0 }' > $ofname
@@ -138,8 +142,11 @@ compare_repquota_zfsuserspace() {
     local ves="$1"
     for ve in $ves; do
 	REPQUOTA_OUT=$(ve_repquota $ve)
-	ZFSUSERSPACE_OUT=$(ve_zfsuserspace $ve)
-	diff $REPQUOTA_OUT $ZFSUSERSPACE_OUT
+	ZFS_SPACE_OUT=$(ve_zfs_space $ve)
+	(echo "ZFS USERSPACE/REPQUOTA USER DIFF";
+	diff -u $REPQUOTA_OUT $ZFS_SPACE_OUT) 2>&1 | \
+		tee -a /$ZFS_ROOT/$ve/disk/log
+	/bin/rm -f $REPQUOTA_OUT $ZFS_SPACE_OUT
     done
 }
 
@@ -174,9 +181,11 @@ do_stress_test() {
     done
 }
 
-if [ "$1" = "--help" ]; then
-    set +x
-    echo "Usage $0 VE_NUMS RUNS"
-    exit 0
+if [[ "$(basename -- "$0")" == "stress_test.sh" ]]; then
+	if [ "$1" = "--help" ]; then
+	    set +x
+	    echo "Usage $0 VE_NUMS RUNS"
+	    exit 0
+	fi
+	do_stress_test $@
 fi
-do_stress_test $@
