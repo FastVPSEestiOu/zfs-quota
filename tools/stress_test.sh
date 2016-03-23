@@ -4,15 +4,18 @@ if [[ "$(basename -- "$0")" == "stress_test.sh" ]]; then
 	set -e
 fi
 
+LOGFILE=$(mktemp stress_test.XXXXXXXXXX.log)
+echo "Writing log to $LOGFILE"
+exec 3>$LOGFILE
 ZFS_ROOT=nirvana
-REPO=~/stage/zfs-quota/
+REPO=$PWD/$(dirname -- $(dirname -- "$0"))
 ACTIONS_PER_RUN=128
 
 create_one_zfs()
 {
     echo -n Recreating $ZFS_ROOT/${1}... >&2
-    zfs destroy $ZFS_ROOT/$1 || :
-    zfs create $ZFS_ROOT/$1
+    zfs destroy $ZFS_ROOT/$1 || : >&3 2>&3
+    zfs create $ZFS_ROOT/$1 >&3 2>&3
     echo done >&2
 }
 
@@ -21,8 +24,8 @@ create_one_ve() {
     local PRIVATE=/$ZFS_ROOT/$VEID/disk
     echo -n Creating VEID=$VEID at ${PRIVATE}... >&2
     vzctl create $VEID --ostemplate debian-7.0-x86_64-minimal --layout simfs \
-        --private $PRIVATE
-    cp $REPO/tools/qrandom.py $PRIVATE
+        --private $PRIVATE >&3 2>&3
+    cp $REPO/tools/qrandom.py $PRIVATE >&3 2>&3
     sed -e \
 "/exit 0/i rm -f /aquota.* \n\
 ln -fs /proc/vz/zfsquota/*/aquota.user / \n\
@@ -34,8 +37,8 @@ echo \$! > /pid" \
 }
 
 start_one_ve() {
-    echo -n Starting VEID=$1 >&2
-    vzctl start $1
+    echo -n Starting VEID=${1}... >&2
+    vzctl start $1 >&3 2>&3
 
     local PRIVATE=/$ZFS_ROOT/$1/disk
     for i in $(seq 0 10); do
@@ -51,7 +54,8 @@ get_qrandom_pid() {
     local PRIVATE=/$ZFS_ROOT/$VEID/disk
     local VEPID=$(cat $PRIVATE/pid)
     local VE0PID=$(grep -Plz "(?s)envID:[[:space:]]*$VEID.*VPid:[[:space:]]*$VEPID" \
-             /proc/[0-9]*/status | sed -e 's=/proc/==' -e 's=/status==')
+             /proc/[0-9]*/status 2>/dev/null | \
+	     sed -e 's=/proc/==' -e 's=/status==')
     echo $VE0PID
 }
 
@@ -96,7 +100,7 @@ wait_log() {
             tail -n1 /$ZFS_ROOT/$ve/disk/log | grep -q "$phrase" && \
                 ves="$(echo $ves | sed -e "s/$ve//")"
         done
-	[ -n "$ves" ] && sleep ${timeout}
+	[ -n "$ves" ] && sleep ${timeout} || :
     done
 }
 
@@ -143,8 +147,11 @@ compare_repquota_zfsuserspace() {
     for ve in $ves; do
 	REPQUOTA_OUT=$(ve_repquota $ve)
 	ZFS_SPACE_OUT=$(ve_zfs_space $ve)
-	(echo "ZFS USERSPACE/REPQUOTA USER DIFF";
-	diff -u $REPQUOTA_OUT $ZFS_SPACE_OUT) 2>&1 | \
+	echo "REPQUOTA FOR $ve" >&2
+	tail -n1 /$ZFS_ROOT/$ve/disk/log >&2
+	echo "QUOTA DIFF FOR $ve" 2>&1 | \
+		tee -a /$ZFS_ROOT/$ve/disk/log
+	diff -u $REPQUOTA_OUT $ZFS_SPACE_OUT 2>&1 | \
 		tee -a /$ZFS_ROOT/$ve/disk/log
 	/bin/rm -f $REPQUOTA_OUT $ZFS_SPACE_OUT
     done
@@ -164,20 +171,22 @@ do_stress_test() {
     ves="$(start_ves 1100 $((1100 + $VE_NUMS - 1)))"
     qrandom_pids="$(get_qrandom_pids "$ves")"
 
-    SYNCS="$(seq 0 10)"
-    for iter in $(seq 0 $RUNS); do
+    SYNCS="$(seq 1 10)"
+    for iter in $(seq 1 $RUNS); do
 	ITER=$iter
 	export ITER
 	echo Iteration $iter/$RUNS >&2
-        schedule_qrandom "$ves" "$qrandom_pids"
+	schedule_qrandom "$ves" "$qrandom_pids"
 	wait_qrandom "$ves" "$qrandom_pids"
+	echo -n "Syncing..." >&2
 	for f in $SYNCS; do
 	    sync
 	    sleep 1
 	done
+	echo done >&2
 	check_qrandom "$ves" "$qrandom_pids"
 	compare_repquota_zfsuserspace "$ves"
-        copy_logs "$ves" "$qrandom_pids"
+	copy_logs "$ves" "$qrandom_pids"
     done
 }
 
