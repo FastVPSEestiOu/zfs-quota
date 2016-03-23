@@ -196,6 +196,35 @@ out:
 	return ERR_PTR(-ENOENT);
 }
 
+int zqproc_get_sb_type(struct inode *inode, struct super_block **psb,
+		       int *ptype)
+{
+	int err, type;
+	struct block_device *bdev;
+	struct super_block *sb;
+
+	err = -ENODEV;
+	bdev = bdget(zfs_aquot_getdev(inode->i_ino));
+	if (bdev == NULL)
+		goto out_err;
+	sb = get_super(bdev);
+	bdput(bdev);
+	if (sb == NULL)
+		goto out_err;
+	drop_super(sb);
+	type = zfs_aquot_type(inode->i_ino) - 1;
+
+	if (psb)
+		*psb = sb;
+	if (ptype)
+		*ptype = type;
+
+	err = 0;
+
+out_err:
+	return err;
+}
+
 static struct file_operations zfs_aquotq_file_operations = {
 	.read = &generic_read_dir,
 	.readdir = &zfs_aquotq_readdir,

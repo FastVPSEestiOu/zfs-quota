@@ -12,6 +12,7 @@ struct quota_data {
 };
 
 struct quota_tree;
+struct zqhandle;
 
 /* Register and unregister fake-FS superblock  */
 int zqtree_init_superblock(struct super_block *sb);

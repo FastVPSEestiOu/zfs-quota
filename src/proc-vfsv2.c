@@ -411,21 +411,13 @@ static int qtree_free(struct qtree_root *root)
 static int zfs_aquotf_vfsv2r1_open(struct inode *inode, struct file *file)
 {
 	int err, type;
-	struct block_device *bdev;
 	struct super_block *sb;
 	struct quota_tree *quota_tree;
 	struct qtree_root *root;
 
-	err = -ENODEV;
-	bdev = bdget(zfs_aquot_getdev(inode->i_ino));
-	if (bdev == NULL)
+	err = zqproc_get_sb_type(inode, &sb, &type);
+	if (err)
 		goto out_err;
-	sb = get_super(bdev);
-	type = zfs_aquot_type(inode->i_ino) - 1;
-	bdput(bdev);
-	if (sb == NULL)
-		goto out_err;
-	drop_super(sb);
 
 	quota_tree = zqtree_get_sync_quota_tree(sb, type);
 	root = qtree_build(type, quota_tree);
@@ -509,7 +501,7 @@ out_err:
 	return err;
 }
 
-static struct file_operations zfs_aquotf_vfsv2r1_file_operations = {
+struct file_operations zfs_aquotf_vfsv2r1_file_operations = {
 	.open = &zfs_aquotf_vfsv2r1_open,
 	.read = &zfs_aquotf_vfsv2r1_read,
 	.release = &zfs_aquotf_vfsv2r1_release,
