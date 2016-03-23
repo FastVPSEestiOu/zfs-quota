@@ -57,8 +57,9 @@ install_zfs_quota() {
 	ssh-keyscan -t rsa,dsa -H github.com >> ~/.ssh/known_hosts
 	git clone git@github.com:paboldin/zfs-quota.git || :
 	pushd zfs-quota
-	git pull
-	make KDIR=$KDIR KERNEL_VERSION=$KERNEL_VERSION
+	[ ! -f ./configure ] && ./autogen.sh
+	[ ! -f Makefile ] && ./configure --with-linux-obj=$KDIR
+	make -j
 	make install
 	popd
 }
