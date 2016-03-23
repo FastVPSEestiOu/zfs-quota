@@ -2,19 +2,21 @@
 #ifndef PROC_H_INCLUDED
 #define PROC_H_INCLUDED
 
-static inline unsigned long zfs_aquot_getino(dev_t dev)
+#define INO_MASK	0xec000000UL
+
+static inline unsigned long zfs_aquot_getino(dev_t dev, int type)
 {
-	return 0xec000000UL + dev;
+	return INO_MASK | (dev << 8) | (type & 0xFF);
 }
 
-static inline dev_t zfs_aquot_getidev(struct inode *inode)
+static inline dev_t zfs_aquot_getdev(unsigned long i_ino)
 {
-	return (dev_t) (unsigned long)PROC_I(inode)->op.proc_get_link;
+	return (INO_MASK ^ i_ino) >> 8;
 }
 
-static inline void zfs_aquot_setidev(struct inode *inode, dev_t dev)
+static inline int zfs_aquot_type(unsigned long i_ino)
 {
-	PROC_I(inode)->op.proc_get_link = (void *)(unsigned long)dev;
+	return i_ino & 0xFF;
 }
 
 #endif /* PROC_H_INCLUDED */

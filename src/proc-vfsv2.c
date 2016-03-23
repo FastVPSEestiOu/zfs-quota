@@ -3,6 +3,7 @@
 #include <linux/module.h>
 #include <linux/proc_fs.h>
 #include <linux/mount.h>
+#include <linux/slab.h>
 
 #include <linux/uaccess.h>
 #include <linux/ctype.h>
@@ -416,11 +417,11 @@ static int zfs_aquotf_vfsv2r1_open(struct inode *inode, struct file *file)
 	struct qtree_root *root;
 
 	err = -ENODEV;
-	bdev = bdget(zfs_aquot_getidev(inode));
+	bdev = bdget(zfs_aquot_getdev(inode->i_ino));
 	if (bdev == NULL)
 		goto out_err;
 	sb = get_super(bdev);
-	type = PROC_I(inode)->fd - 1;
+	type = zfs_aquot_type(inode->i_ino) - 1;
 	bdput(bdev);
 	if (sb == NULL)
 		goto out_err;

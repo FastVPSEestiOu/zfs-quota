@@ -115,14 +115,12 @@ static int zfs_aquotq_lookset(struct inode *inode, void *data)
 
 	d = data;
 	inode->i_mtime = inode->i_atime = inode->i_ctime = CURRENT_TIME;
-	inode->i_ino = zfs_aquot_getino(d->dev) + d->type + 1;
+	inode->i_ino = zfs_aquot_getino(d->dev, d->type + 1);
 	inode->i_mode = S_IFREG | S_IRUSR;
 	inode->i_uid = 0;
 	inode->i_gid = 0;
 	inode->i_nlink = 1;
 	inode->i_op = &zfs_aquotf_inode_operations;
-	PROC_I(inode)->fd = d->type + 1;
-	zfs_aquot_setidev(inode, d->dev);
 
 	if (d->fmt == QFMT_VFS_OLD) {
 		zfs_aquotq_vfsold_lookset(inode);
@@ -335,7 +333,7 @@ static int zfs_aquotd_readdir(struct file *file, void *data, filldir_t filler)
 
 		l = sprintf(buf, "%08x", new_encode_dev(sb->s_dev));
 		if ((*filler) (data, buf, l, i - 1,
-			       zfs_aquot_getino(sb->s_dev), DT_DIR))
+			       zfs_aquot_getino(sb->s_dev, 0), DT_DIR))
 			break;
 	}
 
@@ -360,14 +358,13 @@ static int zfs_aquotd_lookset(struct inode *inode, void *data)
 
 	dev = (dev_t) (unsigned long)data;
 	inode->i_mtime = inode->i_atime = inode->i_ctime = CURRENT_TIME;
-	inode->i_ino = zfs_aquot_getino(dev);
+	inode->i_ino = zfs_aquot_getino(dev, 0);
 	inode->i_mode = S_IFDIR | S_IRUSR | S_IXUSR;
 	inode->i_uid = 0;
 	inode->i_gid = 0;
 	inode->i_nlink = 2;
 	inode->i_op = &zfs_aquotq_inode_operations;
 	inode->i_fop = &zfs_aquotq_file_operations;
-	zfs_aquot_setidev(inode, dev);
 	return 0;
 }
 
@@ -417,7 +414,7 @@ static struct dentry *zfs_aquotd_lookup(struct inode *dir,
 		goto out;
  */
 
-	inode = iget5_locked(dir->i_sb, zfs_aquot_getino(dev),
+	inode = iget5_locked(dir->i_sb, zfs_aquot_getino(dev, 0),
 			     zfs_aquotd_looktest, zfs_aquotd_lookset,
 			     (void *)(unsigned long)dev);
 	if (inode == NULL)
