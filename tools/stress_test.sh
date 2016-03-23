@@ -25,6 +25,7 @@ create_one_ve() {
     echo -n Creating VEID=$VEID at ${PRIVATE}... >&2
     vzctl create $VEID --ostemplate debian-7.0-x86_64-minimal --layout simfs \
         --private $PRIVATE >&3 2>&3
+    vzctl set $VEID --save --quotaugidlimit 1000 >&3 2>&3
     cp $REPO/tools/qrandom.py $PRIVATE >&3 2>&3
     sed -e \
 "/exit 0/i rm -f /aquota.* \n\
