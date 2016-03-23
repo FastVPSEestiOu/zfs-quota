@@ -102,8 +102,8 @@ static int zfs_aquotq_looktest(struct inode *inode, void *data)
 {
 	struct zfs_aquotq_lookdata *d = data;
 	return inode->i_op == &zfs_aquotf_inode_operations &&
-	    zfs_aquot_getidev(inode) == d->dev &&
-	    PROC_I(inode)->fd == d->type + 1;
+	    zfs_aquot_getdev(inode->i_ino) == d->dev &&
+	    zfs_aquot_type(inode->i_ino) == d->type + 1;
 }
 
 int zfs_aquotq_vfsold_lookset(struct inode *inode);
@@ -175,7 +175,7 @@ static struct dentry *zfs_aquotq_lookup(struct inode *dir,
 		fmt = QFMT_VFS_V1;
 	} else
 		goto out;
-	d.dev = zfs_aquot_getidev(dir);
+	d.dev = zfs_aquot_getdev(dir->i_ino);
 	d.type = k;
 	d.fmt = fmt;
 
@@ -349,7 +349,7 @@ out_err:
 static int zfs_aquotd_looktest(struct inode *inode, void *data)
 {
 	return inode->i_op == &zfs_aquotq_inode_operations &&
-	    zfs_aquot_getidev(inode) == (dev_t) (unsigned long)data;
+	    zfs_aquot_getdev(inode->i_ino) == (dev_t) (unsigned long)data;
 }
 
 static int zfs_aquotd_lookset(struct inode *inode, void *data)
