@@ -3,6 +3,7 @@
 #include <linux/module.h>
 #include <linux/proc_fs.h>
 #include <linux/mount.h>
+#include <linux/ve_proto.h>
 
 #include <linux/fs_struct.h>
 #include <linux/sched.h>
@@ -323,6 +324,8 @@ static int zfs_aquotd_readdir(struct file *file, void *data, filldir_t filler)
 
 	list_for_each_entry(de, &mntlist, list) {
 		sb = de->mnt->mnt_sb;
+		if (get_device_perms_ve(S_IFBLK, sb->s_dev, FMODE_QUOTACTL))
+			continue;
 
 		if (sb->s_qcop != &zfsquota_q_cops)
 			continue;
@@ -409,10 +412,8 @@ static struct dentry *zfs_aquotd_lookup(struct inode *dir,
 	}
 	dev = new_decode_dev(dev);
 
-/*
 	if (get_device_perms_ve(S_IFBLK, dev, FMODE_QUOTACTL))
 		goto out;
- */
 
 	inode = iget5_locked(dir->i_sb, zfs_aquot_getino(dev, 0),
 			     zfs_aquotd_looktest, zfs_aquotd_lookset,
