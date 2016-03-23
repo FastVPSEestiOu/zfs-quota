@@ -154,41 +154,6 @@ out:
 	return handle;
 }
 
-struct zqfs_fs_info {
-	union {
-		struct vfsmount *real_mnt;
-		struct nameidata *nd;
-	};
-	char fake_dev_name[PATH_MAX];
-};
-
-int zqtree_next_mount(void *prev_sb, struct vfsmount **mnt, void **next_sb)
-{
-	struct zqhandle *p[1];
-	struct super_block *sb;
-	int ret;
-
-	ret = radix_tree_gang_lookup(&zqhandle_tree, (void **)p, 1,
-				     (unsigned long)prev_sb);
-	if (!ret)
-		return 0;
-
-	sb = p[0]->sb;
-	if (next_sb)
-		*next_sb = sb + 1;
-
-	if (!strcmp(sb->s_type->name, "simfs")) {
-		*mnt = mntget((struct vfsmount *)sb->s_fs_info);
-	} else if (!strcmp(sb->s_type->name, "zqfs")) {
-		*mnt = mntget(((struct zqfs_fs_info *)sb->s_fs_info)->real_mnt);
-	} else {
-		*mnt = NULL;
-		return 0;
-	}
-
-	return 1;
-}
-
 struct quota_tree *zqhandle_get_tree(struct zqhandle *handle, int type)
 {
 	if (type < 0 || type >= MAXQUOTAS)

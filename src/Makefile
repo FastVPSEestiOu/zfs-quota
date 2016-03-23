@@ -2,7 +2,12 @@
 KERNEL_VERSION ?= $(shell uname -r)
 
 obj-m = zfs-quota.o
-zfs-quota-y := quota.o proc.o tree.o zfs.o radix-tree-iter.o proc-vfsold.o proc-vfsv2.o
+zfs-quota-y := quota.o tree.o zfs.o radix-tree-iter.o proc-vfsold.o proc-vfsv2.o
+ifeq ($(CONFIG_VE),y)
+zfs-quota-y += proc-ve.c
+else
+zfs-quota-y += proc.c
+endif
 ccflags-y := -DHAVE_USLEEP_RANGE=1 -DOBJECT_QUOTA
 ccflags-y += -I/usr/local/src/spl-0.6.5/include
 ccflags-y += -I/usr/local/src/zfs-0.6.5/include

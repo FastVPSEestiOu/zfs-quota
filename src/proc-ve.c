@@ -4,10 +4,8 @@
 #include <linux/proc_fs.h>
 #include <linux/mount.h>
 
-#ifndef CONFIG_VE
-#	include <linux/fs_struct.h>
-#	include <linux/sched.h>
-#endif /* #ifndef CONFIG_VE */
+#include <linux/fs_struct.h>
+#include <linux/sched.h>
 
 #include <linux/uaccess.h>
 #include <linux/ctype.h>
@@ -23,14 +21,6 @@ static const char aquota_group[] = "aquota.group";
 static struct proc_dir_entry *glob_zfsquota_proc;
 
 extern struct quotactl_ops zfsquota_q_cops;
-
-#ifndef CONFIG_VE
-struct ve_struct {};
-static struct ve_struct *set_exec_env(struct ve_struct *ve)
-{
-	return ve;
-}
-#endif /* #ifndef CONFIG_VE */
 
 /* ----------------------------------------------------------------------
  *
@@ -227,7 +217,6 @@ struct zfs_aquot_de {
 	struct vfsmount *mnt;
 };
 
-#ifdef CONFIG_VE
 static int zfs_aquot_buildmntlist(struct ve_struct *ve, struct list_head *head)
 {
 	struct vfsmount *mnt;
@@ -288,42 +277,6 @@ static void zfs_aquot_releasemntlist(struct ve_struct *ve,
 		kfree(p);
 	}
 }
-#else /* #ifdef CONFIG_VE */
-int zqtree_next_mount(void *prev_sb, struct vfsmount **mnt, void **next_sb);
-
-#warning A lot of races got here this night...
-static int zfs_aquot_buildmntlist(struct ve_struct *ve, struct list_head *head)
-{
-	void *sb = NULL;
-	struct vfsmount *mnt;
-	struct zfs_aquot_de *p;
-	int err;
-
-	while (zqtree_next_mount(sb, &mnt, &sb)) {
-		err = -ENOMEM;
-		p = kmalloc(sizeof(*p), GFP_ATOMIC);
-		if (p == NULL)
-			goto out;
-		list_add_tail(&p->list, head);
-	}
-out:
-	return err;
-}
-
-static void zfs_aquot_releasemntlist(struct ve_struct *ve,
-				     struct list_head *head)
-{
-	struct zfs_aquot_de *p;
-
-	while (!list_empty(head)) {
-		p = list_entry(head->next, typeof(*p), list);
-		mntput(p->mnt);
-		list_del(&p->list);
-		kfree(p);
-	}
-}
-#endif /* #else #ifdef CONFIG_VE */
-
 static int zfs_aquotd_readdir(struct file *file, void *data, filldir_t filler)
 {
 	struct ve_struct *ve, *old_ve;
@@ -340,7 +293,6 @@ static int zfs_aquotd_readdir(struct file *file, void *data, filldir_t filler)
 	n = file->f_pos;
 
 	INIT_LIST_HEAD(&mntlist);
-#ifdef CONFIG_VE
 	ve = file->f_dentry->d_sb->s_type->owner_env;
 	old_ve = set_exec_env(ve);
 
@@ -350,12 +302,7 @@ static int zfs_aquotd_readdir(struct file *file, void *data, filldir_t filler)
 	 * (or just mount points).
 	 */
 	err = ve_is_super(ve);
-#else /* #ifdef CONFIG_VE */
-	ve = NULL;
-	(void) old_ve;
 
-	err = 0;
-#endif /* #else #ifdef CONFIG_VE */
 	if (!err) {
 		err = zfs_aquot_buildmntlist(ve, &mntlist);
 		if (err)
@@ -436,7 +383,6 @@ static struct dentry *zfs_aquotd_lookup(struct inode *dir,
 
 	printk("%s\n", __func__);
 
-#ifdef CONFIG_VE
 	ve = dir->i_sb->s_type->owner_env;
 	old_ve = set_exec_env(ve);
 	/*
@@ -446,9 +392,6 @@ static struct dentry *zfs_aquotd_lookup(struct inode *dir,
 	 */
 	if (ve_is_super(ve))
 		goto out;
-#else /* #ifdef CONFIG_VE */
-	(void) ve; (void) old_ve;
-#endif /* #else #ifdef CONFIG_VE */
 
 	dev = 0;
 	l = dentry->d_name.len;
@@ -499,7 +442,6 @@ static int zfs_aquotd_getattr(struct vfsmount *mnt, struct dentry *dentry,
 	struct list_head mntlist, *pos;
 
 	generic_fillattr(dentry->d_inode, stat);
-#ifdef CONFIG_VE
 	ve = dentry->d_sb->s_type->owner_env;
 
 	/*
@@ -509,10 +451,7 @@ static int zfs_aquotd_getattr(struct vfsmount *mnt, struct dentry *dentry,
 	 */
 	if (ve_is_super(ve))
 		return 0;
-#else /* #ifdef CONFIG_VE */
-	ve = NULL;
-	(void) old_ve;
-#endif /* #else #ifdef CONFIG_VE */
+
 	INIT_LIST_HEAD(&mntlist);
 	old_ve = set_exec_env(ve);
 	if (!zfs_aquot_buildmntlist(ve, &mntlist))
@@ -537,11 +476,7 @@ int __init zfsquota_proc_init(void)
 {
 	glob_zfsquota_proc =
 	    create_proc_entry("zfsquota", S_IFDIR | S_IRUSR | S_IXUSR,
-#ifdef CONFIG_VE
 			      glob_proc_vz_dir
-#else /* #ifdef CONFIG_VE */
-			      NULL
-#endif /* #else #ifdef CONFIG_VE */
 			    );
 	glob_zfsquota_proc->proc_iops = &zfs_aquotd_inode_operations;
 	glob_zfsquota_proc->proc_fops = &zfs_aquotd_file_operations;
@@ -551,11 +486,6 @@ int __init zfsquota_proc_init(void)
 
 void __exit zfsquota_proc_exit(void)
 {
-	remove_proc_entry("zfsquota", 
-#ifdef CONFIG_VE
-			      glob_proc_vz_dir
-#else /* #ifdef CONFIG_VE */
-			      NULL
-#endif /* #else #ifdef CONFIG_VE */
+	remove_proc_entry("zfsquota", glob_proc_vz_dir
 			);
 }
