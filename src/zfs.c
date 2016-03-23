@@ -1,6 +1,7 @@
 
 #include <linux/stddef.h>
 
+#include <spl_config.h>
 #include <zfs_config.h>
 #include <sys/zfs_context.h>
 #include <sys/types.h>

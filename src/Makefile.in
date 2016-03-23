@@ -10,9 +10,8 @@ zfs-quota-y += proc.o
 endif
 #ccflags-y := -DHAVE_USLEEP_RANGE=1 
 ccflags-y += -DOBJECT_QUOTA
-ccflags-y += -I@SPL@/include
-ccflags-y += -I@ZFS@/include
-ccflags-y += -I@ZFS_OBJ@
+ccflags-y += -I@SPL@/include -I@SPL_OBJ@
+ccflags-y += -I@ZFS@/include -I@ZFS_OBJ@
 
 modules:
 	@if [ -f @ZFS_KERNEL_INCLUDE@/Module.symvers ]; then \

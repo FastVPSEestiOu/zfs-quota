@@ -299,7 +299,49 @@ AC_DEFUN([ZFS_AC_SPL], [
 	$all_spl_sources])
 	])
 
+	dnl #
+	dnl # The existence of the spl_config.h is used to identify a valid
+	dnl # spl object directory.  In many cases the object and source
+	dnl # directory are the same, however the objects may also reside
+	dnl # is a subdirectory named after the kernel version.
+	dnl #
+	dnl # This file is supposed to be available after DKMS finishes
+	dnl # building the SPL kernel module for the target kernel.  The
+	dnl # '--with-spl-timeout' option can be passed to pause here,
+	dnl # waiting for the file to appear from a concurrently building
+	dnl # SPL package.
+	dnl #
+	AC_MSG_CHECKING([spl build directory])
+
+	all_spl_config_locs="${splsrc}/${LINUX_VERSION}
+	${splsrc}"
+
+	AS_IF([test -z "$splbuild"], [
+		AS_IF([ test -e "${splsrc}/${LINUX_VERSION}/spl_config.h" ], [
+			splbuild="${splsrc}/${LINUX_VERSION}"
+		], [ test -e "${splsrc}/spl_config.h" ], [
+			splbuild="${splsrc}"
+		], [ find -L "${splsrc}" -name spl_config.h 2> /dev/null | grep -wq spl_config.h ], [
+			splbuild=$(find -L "${splsrc}" -name spl_config.h | sed 's,/spl_config.h,,')
+		], [
+			splbuild="[Not found]"
+		])
+	])
+
+	AC_MSG_RESULT([$splbuild])
+	AS_IF([ ! test -e "$splbuild/spl_config.h"], [
+		AC_MSG_ERROR([
+	*** Please make sure the kmod spl devel <kernel> package for your
+	*** distribution is installed then try again.  If that fails you
+	*** can specify the location of the spl objects with the
+	*** '--with-spl-obj=PATH' option.  Failed to find spl_config.h in
+	*** any of the following:
+	$all_spl_config_locs])
+	])
+
 	SPL=${splsrc}
+	SPL_OBJ=${splbuild}
 
 	AC_SUBST(SPL)
+	AC_SUBST(SPL_OBJ)
 ])
