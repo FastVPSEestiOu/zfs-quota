@@ -13,19 +13,6 @@
 
 #include "tree.h"
 
-static int zfsquota_on(struct super_block *sb, int type, int id, char *name,
-		       int remount)
-{
-	printk("%s\n", __func__);
-	return 0;
-}
-
-static int zfsquota_off(struct super_block *sb, int type, int remount)
-{
-	printk("%s\n", __func__);
-	return 0;
-}
-
 int zfsquota_get_dqblk(struct super_block *sb, int type,
 		       qid_t id, struct if_dqblk *di)
 {
@@ -79,8 +66,6 @@ static int zfsquota_sync(struct super_block *sb, int type)
 }
 
 struct quotactl_ops zfsquota_q_cops = {
-	.quota_on = zfsquota_on,
-	.quota_off = zfsquota_off,
 	.quota_sync = zfsquota_sync,
 	.get_info = zfsquota_get_info,
 	.set_info = zfsquota_set_info,
