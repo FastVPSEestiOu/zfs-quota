@@ -1,0 +1,44 @@
+
+obj-m = zfs-quota.o
+zfs-quota-y := quota.o tree.o zfs.o radix-tree-iter.o proc-vfsold.o proc-vfsv2.o
+ifneq ($(KERNELVERSION),)
+ ifeq ($(CONFIG_VE),y)
+zfs-quota-y += proc-ve.o
+ else
+zfs-quota-y += proc.o
+ endif
+endif
+#ccflags-y := -DHAVE_USLEEP_RANGE=1 
+ccflags-y += -DOBJECT_QUOTA
+ccflags-y += -I@SPL@/include
+ccflags-y += -I@ZFS@/include
+ccflags-y += -I@ZFS_OBJ@
+
+modules:
+	@if [ -f @ZFS_KERNEL_INCLUDE@/Module.symvers ]; then \
+		/bin/cp @ZFS_KERNEL_INCLUDE@/Module.symvers .; \
+	else \
+		echo -e "\n" \
+		"*** Missing ZFS symbols ensure you have built the ZFS:\n" \
+		"*** - @ZFS_KERNEL_INCLUDE@/Module.symvers\n"; \
+		exit 1; \
+	fi
+	$(MAKE) -C @LINUX_OBJ@ SUBDIRS=`pwd` $@
+
+modules_install:
+	@# Install the kernel modules
+	$(MAKE) -C @LINUX_OBJ@ SUBDIRS=`pwd` $@ \
+		INSTALL_MOD_PATH=$(DESTDIR)$(INSTALL_MOD_PATH) \
+		INSTALL_MOD_DIR=$(INSTALL_MOD_DIR) \
+		KERNELRELEASE=@LINUX_VERSION@
+	@# Remove extraneous build products when packaging
+	kmoddir=$(DESTDIR)$(INSTALL_MOD_PATH)/lib/modules/@LINUX_VERSION@; \
+	if [ -n "$(DESTDIR)" ]; then \
+		find $$kmoddir -name 'modules.*' | xargs $(RM); \
+	fi
+	sysmap=$(DESTDIR)$(INSTALL_MOD_PATH)/boot/System.map-@LINUX_VERSION@; \
+	if [ -f $$sysmap ]; then \
+		depmod -ae -F $$sysmap @LINUX_VERSION@; \
+	fi
+
+all: modules
