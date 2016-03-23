@@ -21,15 +21,20 @@
 #include <linux/module.h>
 #include <linux/mount.h>
 #include <linux/sched.h>
-#include <linux/vzquota.h>
 #include <linux/statfs.h>
-#include <linux/virtinfo.h>
 #include <linux/genhd.h>
 #include <linux/reiserfs_fs.h>
 #include <linux/exportfs.h>
 #include <linux/seq_file.h>
 #include <linux/quotaops.h>
 #include <linux/string.h>
+
+#ifdef CONFIG_VE
+#	include <linux/vzquota.h>
+#	include <linux/virtinfo.h>
+#else /* #ifdef CONFIG_VE */
+#define VZQUOTA_FAKE_FSTYPE "reiserfs"
+#endif /* #else #ifdef CONFIG_VE */
 
 #include <asm/unistd.h>
 #include <asm/uaccess.h>
@@ -122,6 +127,7 @@ static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 }
 #endif /* #else #ifdef CONFIG_VE */
 
+#ifdef CONFIG_VE
 static int zqfs_start_write(struct super_block *sb, int level, bool wait)
 {
 	struct super_block *root_sb = SIMFS_GET_LOWER_FS_SB(sb);
@@ -149,6 +155,7 @@ static void zqfs_end_write(struct super_block *sb, int level)
 	}
 	__sb_end_write(root_sb, level);
 }
+#endif /* #ifdef CONFIG_VE */
 
 #if defined(CONFIG_QUOTA) && defined(CONFIG_VE)
 static struct inode *zqfs_quota_root(struct super_block *sb)
@@ -203,7 +210,11 @@ static void zqfs_quota_free(struct super_block *sb)
 static void zqfs_show_type(struct seq_file *m, struct super_block *sb)
 {
 #ifdef CONFIG_QUOTA
+#	ifdef CONFIG_VE
 	if (vzquota_fake_fstype(current))
+#	else
+	if (1)
+#	endif
 		seq_escape(m, VZQUOTA_FAKE_FSTYPE, " \t\n\\");
 	else
 #endif
@@ -243,8 +254,10 @@ static struct super_operations zqfs_super_ops = {
 #	endif /* #ifdef CONFIG_VE */
 #endif
 	.statfs = zqfs_statfs,
+#ifdef CONFIG_VE
 	.start_write	= &zqfs_start_write,
 	.end_write	= &zqfs_end_write,
+#endif /* #ifdef CONFIG_VE */
 };
 
 #if defined(CONFIG_EXPORTFS) || defined(CONFIG_EXPORTFS_MODULE)
