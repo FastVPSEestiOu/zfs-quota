@@ -64,6 +64,7 @@ int zqtree_init_superblock(struct super_block *sb)
 
 	for (i = 0; i < MAXQUOTAS; ++i) {
 		mutex_init(&data->quota[i].mutex);
+		data->quota[i].version = 1;
 	}
 
 	err = radix_tree_insert(&zqhandle_tree, (unsigned long)sb, data);
@@ -194,6 +195,7 @@ struct quota_data *zqtree_lookup_quota_data(
 		}
 
 		quota_data->qid = id;
+		quota_data->version = quota_tree->version;
 	}
 
 	return quota_data;
@@ -231,6 +233,8 @@ struct quota_data *zqtree_get_filled_quota_data(void *sb, int type, qid_t id)
 
 	if (zfsquota_fill_quotadata(handle->zfsh, quota_data, type,
 				    id)) {
+		/* Invalidate the data */
+		quota_data->version = 0;
 		quota_data = NULL;
 	}
 
