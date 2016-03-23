@@ -242,13 +242,13 @@ struct quota_data *zqtree_get_filled_quota_data(void *sb, int type, qid_t id)
 void zqtree_print_quota_data(struct quota_data *qd)
 {
 	printk("qd = %p, { .qid = %u, .space_used = %Lu, .space_quota = %Lu"
-#ifdef OBJECT_QUOTA
+#ifdef HAVE_OBJECT_QUOTA
 	       ", .obj_used = %Lu, .obj_quota = %Lu"
-#endif /* OBJECT_QUOTA */
+#endif /* HAVE_OBJECT_QUOTA */
 	       " }\n", qd, qd->qid, qd->space_used, qd->space_quota
-#ifdef OBJECT_QUOTA
+#ifdef HAVE_OBJECT_QUOTA
 	       , qd->obj_used, qd->obj_quota
-#endif /* OBJECT_QUOTA */
+#endif /* HAVE_OBJECT_QUOTA */
 	    );
 }
 
@@ -300,14 +300,14 @@ int zqtree_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
 		    quota_data->space_quota / 1024;
 		di->dqb_valid |= QIF_BLIMITS;
 	}
-#ifdef OBJECT_QUOTA
+#ifdef HAVE_OBJECT_QUOTA
 	di->dqb_curinodes = quota_data->obj_used;
 	di->dqb_valid |= QIF_INODES;
 	if (quota_data->obj_quota) {
 		di->dqb_ihardlimit = di->dqb_isoftlimit = quota_data->obj_quota;
 		di->dqb_valid |= QIF_ILIMITS;
 	}
-#endif /* OBJECT_QUOTA */
+#endif /* HAVE_OBJECT_QUOTA */
 
 	return 0;
 }
@@ -335,7 +335,7 @@ int zqtree_set_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
 			goto out;
 	}
 
-#ifdef OBJECT_QUOTA
+#ifdef HAVE_OBJECT_QUOTA
 	if (di->dqb_valid & QIF_ILIMITS) {
 		limit = min_except_zero(di->dqb_ihardlimit,
 					di->dqb_isoftlimit);
@@ -344,7 +344,7 @@ int zqtree_set_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
 		if (ret)
 			goto out;
 	}
-#endif /* OBJECT_QUOTA */
+#endif /* HAVE_OBJECT_QUOTA */
 
 out:
 	zqhandle_put(handle);

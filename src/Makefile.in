@@ -8,8 +8,7 @@ zfs-quota-y += proc-ve.o
 zfs-quota-y += proc.o
  endif
 endif
-#ccflags-y := -DHAVE_USLEEP_RANGE=1 
-ccflags-y += -DOBJECT_QUOTA
+ccflags-y := -include $(SUBDIRS)/../zfs-quota-config.h
 ccflags-y += -I@SPL@/include -I@SPL_OBJ@
 ccflags-y += -I@ZFS@/include -I@ZFS_OBJ@
 

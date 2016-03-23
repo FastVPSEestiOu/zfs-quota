@@ -34,7 +34,7 @@ int zfsquota_fill_quotadata(void *zfs_handle, struct quota_data *quota_data,
 	if (err)
 		return err;
 
-#ifdef OBJECT_QUOTA
+#ifdef HAVE_OBJECT_QUOTA
 	err = zfs_userspace_one(zfs_handle,
 				type ==
 				USRQUOTA ? ZFS_PROP_USEROBJUSED :
@@ -56,7 +56,7 @@ int zfsquota_fill_quotadata(void *zfs_handle, struct quota_data *quota_data,
 
 no_obj_quota:
 	;
-#endif /* OBJECT_QUOTA */
+#endif /* HAVE_OBJECT_QUOTA */
 
 	return 0;
 }
@@ -74,7 +74,7 @@ zfs_prop_list_t *zfs_get_prop_list(int quota_type)
 			.prop = ZFS_PROP_USERQUOTA,
 			.offset = QD_OFFSET(space_quota),
 		},
-#ifdef OBJECT_QUOTA
+#ifdef HAVE_OBJECT_QUOTA
 		{
 			.prop = ZFS_PROP_USEROBJUSED,
 			.offset = QD_OFFSET(obj_used),
@@ -83,7 +83,7 @@ zfs_prop_list_t *zfs_get_prop_list(int quota_type)
 			.prop = ZFS_PROP_USEROBJQUOTA,
 			.offset = QD_OFFSET(obj_quota),
 		},
-#endif /* OBJECT_QUOTA */
+#endif /* HAVE_OBJECT_QUOTA */
 		{
 			.prop = -1,
 		}
@@ -97,7 +97,7 @@ zfs_prop_list_t *zfs_get_prop_list(int quota_type)
 			.prop = ZFS_PROP_GROUPQUOTA,
 			.offset = QD_OFFSET(space_quota),
 		},
-#ifdef OBJECT_QUOTA
+#ifdef HAVE_OBJECT_QUOTA
 		{
 			.prop = ZFS_PROP_GROUPOBJUSED,
 			.offset = QD_OFFSET(obj_used),
@@ -106,7 +106,7 @@ zfs_prop_list_t *zfs_get_prop_list(int quota_type)
 			.prop = ZFS_PROP_GROUPOBJQUOTA,
 			.offset = QD_OFFSET(obj_quota),
 		},
-#endif /* OBJECT_QUOTA */
+#endif /* HAVE_OBJECT_QUOTA */
 		{
 			.prop = -1,
 		}
@@ -143,7 +143,7 @@ int zfs_set_space_quota(void *zfs_handle, int quota_type, qid_t id,
 	return zfs_set_userquota(zfs_handle, type, "", id, limit);
 }
 
-#ifdef OBJECT_QUOTA
+#ifdef HAVE_OBJECT_QUOTA
 int zfs_set_object_quota(void *zfs_handle, int quota_type, qid_t id,
 			 uint64_t limit)
 {
@@ -162,7 +162,7 @@ int zfs_set_object_quota(void *zfs_handle, int quota_type, qid_t id,
 
 	return zfs_set_userquota(zfs_handle, type, "", id, limit);
 }
-#endif /* OBJECT_QUOTA */
+#endif /* HAVE_OBJECT_QUOTA */
 
 
 #define ZFS_PROP_ITER_BUFSIZE (sizeof(zfs_useracct_t) * 128)
