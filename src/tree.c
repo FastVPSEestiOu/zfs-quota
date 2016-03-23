@@ -80,15 +80,15 @@ out_free:
 
 static int zqtree_quota_tree_destroy(struct quota_tree *quota_tree)
 {
-	radix_tree_iter_t iter;
+	my_radix_tree_iter_t iter;
 	struct quota_data *qd;
 	struct radix_tree_root *root;
 
 	mutex_lock(&quota_tree->mutex);
 	root = &quota_tree->radix;
-	for (radix_tree_iter_start(&iter, root, 0);
-	     (qd = radix_tree_iter_item(&iter));
-	     radix_tree_iter_next(&iter, qd->qid)) {
+	for (my_radix_tree_iter_start(&iter, root, 0);
+	     (qd = my_radix_tree_iter_item(&iter));
+	     my_radix_tree_iter_next(&iter, qd->qid)) {
 
 		kmem_cache_free(quota_data_cachep, qd);
 		radix_tree_delete(root, qd->qid);
@@ -254,13 +254,13 @@ void zqtree_print_quota_data(struct quota_data *qd)
 
 int zqtree_print_tree(struct quota_tree *quota_tree)
 {
-	radix_tree_iter_t iter;
+	my_radix_tree_iter_t iter;
 	struct quota_data *qd;
 
 	printk("quota_tree = %p, version = %u\n", quota_tree, quota_tree->version);
-	for (radix_tree_iter_start(&iter, &quota_tree->radix, 0);
-	     (qd = radix_tree_iter_item(&iter));
-	     radix_tree_iter_next(&iter, qd->qid)) {
+	for (my_radix_tree_iter_start(&iter, &quota_tree->radix, 0);
+	     (qd = my_radix_tree_iter_item(&iter));
+	     my_radix_tree_iter_next(&iter, qd->qid)) {
 
 		zqtree_print_quota_data(qd);
 	}
@@ -480,11 +480,11 @@ void zqtree_zfs_sync_tree(void *sb, int type)
 }
 
 void quota_tree_iter_start(
-		radix_tree_iter_t *iter,
+		my_radix_tree_iter_t *iter,
 		struct quota_tree *root,
 		unsigned long start_key)
 {
-	radix_tree_iter_start(iter, &root->radix, start_key);
+	my_radix_tree_iter_start(iter, &root->radix, start_key);
 }
 
 int quota_tree_gang_lookup(struct quota_tree *quota_tree,

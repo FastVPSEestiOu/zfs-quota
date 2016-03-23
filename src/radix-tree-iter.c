@@ -2,8 +2,8 @@
 #include <linux/radix-tree.h>
 #include "radix-tree-iter.h"
 
-void radix_tree_iter_next_(radix_tree_iter_t * iter);
-void radix_tree_iter_start(radix_tree_iter_t * iter,
+void my_radix_tree_iter_next_(my_radix_tree_iter_t * iter);
+void my_radix_tree_iter_start(my_radix_tree_iter_t * iter,
 			   struct radix_tree_root *root,
 			   unsigned long start_key)
 {
@@ -12,10 +12,10 @@ void radix_tree_iter_start(radix_tree_iter_t * iter,
 	iter->idx = 0;
 	iter->count = 0;
 
-	radix_tree_iter_next_(iter);
+	my_radix_tree_iter_next_(iter);
 }
 
-void *radix_tree_iter_item(radix_tree_iter_t * iter)
+void *my_radix_tree_iter_item(my_radix_tree_iter_t * iter)
 {
 	if (iter->count == 0)
 		return NULL;
@@ -23,7 +23,7 @@ void *radix_tree_iter_item(radix_tree_iter_t * iter)
 	return iter->values[iter->idx];
 }
 
-void radix_tree_iter_next_(radix_tree_iter_t * iter)
+void my_radix_tree_iter_next_(my_radix_tree_iter_t * iter)
 {
 	iter->idx++;
 

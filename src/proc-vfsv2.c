@@ -142,14 +142,14 @@ struct qtree_block *qtree_new_block(struct qtree_root *root,
 void fill_leafs(struct qtree_block *node_block,
 		struct qtree_root *tree_root)
 {
-	radix_tree_iter_t iter;
+	my_radix_tree_iter_t iter;
 	struct quota_data *qd;
 	struct qtree_block *data_block = NULL;
 
 	for (quota_tree_iter_start
 	     (&iter, tree_root->quota_tree, node_block->num);
-	     (qd = radix_tree_iter_item(&iter));
-	     radix_tree_iter_next(&iter, qd->qid)) {
+	     (qd = my_radix_tree_iter_item(&iter));
+	     my_radix_tree_iter_next(&iter, qd->qid)) {
 		struct qtree_leaf *leaf;
 		if (qd->qid >= node_block->num + 256)
 			break;

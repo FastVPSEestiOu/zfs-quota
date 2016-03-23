@@ -32,7 +32,7 @@ int zqtree_free_superblock(struct super_block *sb);
 
 #ifdef RADIX_TREE_ITER_H_INCLUDED
 void quota_tree_iter_start(
-		radix_tree_iter_t *iter,
+		my_radix_tree_iter_t *iter,
 		struct quota_tree *root,
 		unsigned long start_key);
 int quota_tree_gang_lookup(struct quota_tree *root,
