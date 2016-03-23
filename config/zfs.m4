@@ -67,8 +67,9 @@ dnl #
 AC_DEFUN([ZFS_AC_OBJECT_QUOTA],	[
 	AC_MSG_CHECKING([whether ZFS has object quota support])
 	tmp_flags="$EXTRA_KCFLAGS"
-	EXTRA_KCFLAGS="-I$SPL_INCLUDE -I$ZFS_INCLUDE -I$ZFS_KERNEL_INCLUDE -DHAVE_USLEEP_RANGE=1"
+	EXTRA_KCFLAGS="-I$SPL/include -I$SPL_OBJ -I$ZFS/include -I$ZFS_OBJ"
 	ZFS_LINUX_TRY_COMPILE([
+		#include <spl_config.h>
 		#include <zfs_config.h>
 		#include <sys/zfs_context.h>
 		#include <sys/types.h>
