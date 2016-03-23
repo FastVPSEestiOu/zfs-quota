@@ -8,7 +8,7 @@ LOGFILE=$(mktemp stress_test.XXXXXXXXXX.log)
 echo "Writing log to $LOGFILE"
 exec 3>$LOGFILE
 ZFS_ROOT=nirvana
-REPO=$PWD/$(dirname -- $(dirname -- "$0"))
+REPO=$(dirname -- $(dirname -- "$0"))
 ACTIONS_PER_RUN=128
 
 create_one_zfs()
