@@ -380,12 +380,45 @@ static void zqfs_free_export_op(struct super_block *sb)
 extern int vfs_path_lookup(struct dentry *, struct vfsmount *,
                            const char *, unsigned int, struct path *);
 
+int (*original_getattr)(struct vfsmount *mnt, struct dentry *dentry,
+		        struct kstat *stat) = NULL;
+
+static int zqfs_root_getattr(struct vfsmount *mnt, struct dentry *dentry,
+			     struct kstat *stat)
+{
+	int ret;
+
+	ret = original_getattr(mnt, dentry, stat);
+	if (!ret)
+		stat->dev = dentry->d_sb->s_dev;
+
+	return ret;
+}
+
+static struct dentry *alloc_root(struct super_block *sb, struct inode *inode)
+{
+	static struct inode_operations stub_operations;
+	struct dentry *root_dentry;
+
+	if (stub_operations.lookup == NULL) {
+		stub_operations = *inode->i_op;
+		original_getattr = stub_operations.getattr;
+		stub_operations.getattr = zqfs_root_getattr;
+	}
+
+	inode->i_op = &stub_operations;
+
+	root_dentry = d_make_root(inode);
+	root_dentry->d_sb = sb;
+
+	return root_dentry;
+}
+
 static int zqfs_fill_super(struct super_block *s, void *data, int silent)
 {
 	int err;
 	struct zqfs_fs_info *fs_info = NULL;
 	struct path fs_root, path;
-	struct dentry *root_dentry;
 
 	char *root = data;
 	char *devname;
@@ -427,11 +460,9 @@ static int zqfs_fill_super(struct super_block *s, void *data, int silent)
 
 	fs_info->real_mnt = mntget(path.mnt);
 
-	root_dentry = d_make_root(path.dentry->d_inode);
-	root_dentry->d_sb = s;
 
 	s->s_fs_info = fs_info;
-	s->s_root = root_dentry;
+	s->s_root = alloc_root(s, path.dentry->d_inode);
 	s->s_op = &zqfs_super_ops;
 	s->s_xattr = path.dentry->d_sb->s_xattr;
 
