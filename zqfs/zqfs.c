@@ -28,6 +28,8 @@
 #include <linux/seq_file.h>
 #include <linux/quotaops.h>
 #include <linux/string.h>
+#include <linux/dcache.h>
+#include <linux/fs_struct.h>
 
 #ifdef CONFIG_VE
 #	include <linux/vzquota.h>
@@ -42,10 +44,7 @@
 #define SIMFS_GET_LOWER_FS_SB(sb) sb->s_root->d_sb
 
 struct zqfs_fs_info {
-	union {
-		struct vfsmount *real_mnt;
-		struct nameidata *nd;
-	};
+	struct vfsmount *real_mnt;
 	char fake_dev_name[PATH_MAX];
 };
 
@@ -123,6 +122,7 @@ static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 #else /* #ifdef CONFIG_VE */
 static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
+	buf->f_blocks = 1; buf->f_bfree = 1; buf->f_bavail = 1;
 	return 0;
 }
 #endif /* #else #ifdef CONFIG_VE */
@@ -221,12 +221,13 @@ static void zqfs_show_type(struct seq_file *m, struct super_block *sb)
 		seq_escape(m, sb->s_type->name, " \t\n\\");
 }
 
+#ifdef CONFIG_VE
 static int zqfs_show_options(struct seq_file *m, struct vfsmount *mnt)
 {
 	struct zqfs_fs_info *fs_info = mnt->mnt_sb->s_fs_info;
 
 	seq_printf(m, ",dev=%s,fsroot=%s",
-		   fs_info->fake_dev_name, mnt->mnt_devname);
+		   fs_info->fake_dev_name, mnt->mnt_root->d_name.name);
 #ifdef CONFIG_QUOTA
 	if (sb_has_quota_loaded(mnt->mnt_sb, USRQUOTA))
 		seq_puts(m, ",usrquota");
@@ -235,21 +236,48 @@ static int zqfs_show_options(struct seq_file *m, struct vfsmount *mnt)
 #endif
 	return 0;
 }
-
-static int zqfs_show_devname(struct seq_file *m, struct vfsmount *mnt)
+#else /* #ifdef CONFIG_VE */
+static int zqfs_show_options(struct seq_file *m, struct dentry *d_root)
 {
-	struct zqfs_fs_info *fs_info = mnt->mnt_sb->s_fs_info;
+	struct super_block *sb = d_root->d_sb;
+	struct zqfs_fs_info *fs_info = sb->s_fs_info;
+
+	seq_printf(m, ",dev=%s,fsroot=%s",
+		   fs_info->fake_dev_name, sb->s_root->d_name.name);
+	seq_puts(m, ",usrquota");
+	seq_puts(m, ",grpquota");
+	return 0;
+}
+#endif /* #else #ifdef CONFIG_VE */
+
+#ifdef CONFIG_VE
+static int zqfs_show_devname(struct seq_file *m, struct vfsmount *mnt)
+#else /* #ifdef CONFIG_VE */
+static int zqfs_show_devname(struct seq_file *m, struct dentry *d_root)
+#endif /* #else #ifdef CONFIG_VE */
+{
+	struct super_block *sb;
+	struct zqfs_fs_info *fs_info;
+
+#ifdef CONFIG_VE
+	sb = mnt->mnt_sb;
+#else
+	sb = d_root->d_sb;
+#endif
+
+	fs_info = sb->s_fs_info;
 
 	seq_escape(m, fs_info->fake_dev_name, " \t\n\\");
 	return 0;
 }
 
+
 static struct super_operations zqfs_super_ops = {
 #ifdef CONFIG_QUOTA
-	.show_type	= &zqfs_show_type,
 	.show_options	= &zqfs_show_options,
 	.show_devname   = &zqfs_show_devname,
 #	ifdef CONFIG_VE /* This stuff is VZ-specific */
+	.show_type	= &zqfs_show_type,
 	.get_quota_root	= &zqfs_quota_root,
 #	endif /* #ifdef CONFIG_VE */
 #endif
@@ -260,6 +288,8 @@ static struct super_operations zqfs_super_ops = {
 #endif /* #ifdef CONFIG_VE */
 };
 
+#undef CONFIG_EXPORTFS
+#undef CONFIG_EXPORTFS_MODULE
 #if defined(CONFIG_EXPORTFS) || defined(CONFIG_EXPORTFS_MODULE)
 
 #define SIM_CALL_LOWER(method, sb, args...)		\
@@ -347,78 +377,80 @@ static void zqfs_free_export_op(struct super_block *sb)
 }
 #endif
 
+extern int vfs_path_lookup(struct dentry *, struct vfsmount *,
+                           const char *, unsigned int, struct path *);
+
 static int zqfs_fill_super(struct super_block *s, void *data, int silent)
 {
-	struct zqfs_fs_info *fs_info = data;
-	struct nameidata *nd = fs_info->nd;
 	int err;
-
-	err = zqfs_init_export_op(s, nd->path.dentry->d_sb);
-	if (err)
-		goto out_err;
-
-	err = zqfs_init_blkdev(s);
-	if (err)
-		goto out_err;
-
-	fs_info->real_mnt = mntget(nd->path.mnt);
-
-	s->s_fs_info = fs_info;
-	s->s_root = dget(nd->path.dentry);
-	s->s_op = &zqfs_super_ops;
-
-	zqfs_quota_init(s);
-	return 0;
-
-out_err:
-	kfree(fs_info);
-	return err;
-}
-
-static int zqfs_get_sb(struct file_system_type *type, int flags,
-		const char *dev_name, void *data, struct vfsmount *mnt)
-{
-	int err;
-	struct nameidata nd;
 	struct zqfs_fs_info *fs_info = NULL;
+	struct path fs_root, path;
+	struct dentry *root_dentry;
+
 	char *root = data;
 	char *devname;
 
 	err = -EINVAL;
 	if (root == NULL)
-		goto out;
+		goto out_err;
 
 	devname = strchr(root, ',');
 	if (devname == NULL)
-		goto out;
+		goto out_err;
 
 	*devname++ = 0;
 	if (*devname == 0)
-		goto out;
+		goto out_err;
 
-	err = path_lookup(root, LOOKUP_FOLLOW|LOOKUP_DIRECTORY, &nd);
+	get_fs_root(current->fs, &fs_root);
+	err = vfs_path_lookup(fs_root.dentry, fs_root.mnt, root,
+			      LOOKUP_FOLLOW|LOOKUP_DIRECTORY, &path);
+	path_put(&fs_root);
 	if (err)
-		goto out;
+		goto out_err;
+
+	err = zqfs_init_export_op(s, path.dentry->d_sb);
+	if (err)
+		goto out_path;
+
+	err = zqfs_init_blkdev(s);
+	if (err)
+		goto out_path;
 
 	err = -ENOMEM;
 	fs_info = kzalloc(sizeof(*fs_info), GFP_KERNEL);
 	if (fs_info == NULL)
-		goto out_mem;
+		goto out_path;
 
 	strncpy(fs_info->fake_dev_name, devname,
 		sizeof(fs_info->fake_dev_name));
-	fs_info->nd = &nd;
 
-	err = get_sb_nodev(type, flags, fs_info, zqfs_fill_super, mnt);
+	fs_info->real_mnt = mntget(path.mnt);
 
-	path_put(&nd.path);
+	root_dentry = d_make_root(path.dentry->d_inode);
+	root_dentry->d_sb = s;
 
-out_mem:
-	if (err) {
-		kfree(fs_info);
-	}
-out:
+	s->s_fs_info = fs_info;
+	s->s_root = root_dentry;
+	s->s_op = &zqfs_super_ops;
+	s->s_xattr = path.dentry->d_sb->s_xattr;
+
+	path_put(&path);
+
+	zqfs_quota_init(s);
+	return 0;
+
+out_path:
+	path_put(&path);
+out_err:
+	printk("err = %d\n", err);
 	return err;
+}
+
+static struct dentry *zqfs_mount(struct file_system_type *type, int flags,
+		const char *dev_name, void *data)
+{
+	return mount_nodev(type, flags, data, zqfs_fill_super);
 }
 
 static void zqfs_kill_sb(struct super_block *sb)
@@ -427,7 +459,8 @@ static void zqfs_kill_sb(struct super_block *sb)
 
 	dput(sb->s_root);
 	sb->s_root = NULL;
-	mntput(fs_info->real_mnt);
+	if (fs_info)
+		mntput(fs_info->real_mnt);
 	zqfs_free_export_op(sb);
 
 	zqfs_quota_free(sb);
@@ -441,9 +474,11 @@ static void zqfs_kill_sb(struct super_block *sb)
 static struct file_system_type zq_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "zqfs",
-	.get_sb		= zqfs_get_sb,
+	.mount		= zqfs_mount,
 	.kill_sb	= zqfs_kill_sb,
+#ifdef FS_HAS_NEW_FREEZE
 	.fs_flags	= FS_HAS_NEW_FREEZE,
+#endif
 };
 
 static int __init init_zqfs(void)
