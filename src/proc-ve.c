@@ -499,6 +499,12 @@ static struct inode_operations zfs_aquotd_inode_operations = {
 	.getattr = &zfs_aquotd_getattr,
 };
 
+struct proc_dir_entry* zqproc_register_handle(struct super_block *sb)
+{
+	(void) sb;
+	return NULL;
+}
+
 int __init zfsquota_proc_init(void)
 {
 	glob_zfsquota_proc =

@@ -8,6 +8,7 @@
 
 #include "zfs.h"
 #include "radix-tree-iter.h"
+#include "proc.h"
 #include "tree.h"
 
 #define ZQTREE_TAG_STALE	0
@@ -71,6 +72,7 @@ int zqtree_init_superblock(struct super_block *sb)
 	if (err)
 		goto out_free;
 
+	zqproc_register_handle(sb);
 out:
 	mutex_unlock(&zqhandle_tree_mutex);
 	return err;
