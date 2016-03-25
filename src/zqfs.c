@@ -114,15 +114,8 @@ static void quota_get_stat(struct inode *ino, struct kstatfs *buf)
 static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
 	int err;
-	struct dentry *orig_dentry = dentry->d_fsdata;
-	struct zqfs_fs_info *fs_info = dentry->d_sb->s_fs_info;
-	struct path path = {
-		.mnt = mntget(fs_info->real_mnt),
-		.dentry = dget(orig_dentry)
-	};
 
-	err = vfs_statfs(&path, buf);
-	path_put(&path);
+	err = statfs_by_dentry(dentry, buf);
 	if (err)
 		return err;
 
@@ -415,6 +408,12 @@ static void zqfs_free_export_op(struct super_block *sb)
 }
 #endif
 
+#ifdef CONFIG_VE
+static struct dentry *alloc_root(struct super_block *sb, struct dentry *orig_dentry)
+{
+	return dget(orig_dentry);
+}
+#else
 int (*original_getattr)(struct vfsmount *mnt, struct dentry *dentry,
 		        struct kstat *stat) = NULL;
 
@@ -436,11 +435,16 @@ static struct dentry *alloc_root(struct super_block *sb, struct dentry *orig_den
 	struct dentry *root_dentry;
 	struct inode *inode = orig_dentry->d_inode;
 
-	if (stub_operations.lookup == NULL) {
+	if (original_getattr == NULL) {
 		stub_operations = *inode->i_op;
 		original_getattr = stub_operations.getattr;
 		stub_operations.getattr = zqfs_root_getattr;
+
+		printk(KERN_INFO "ZQFS module is now referenced forever\n");
+		module_get(THIS_MODULE);
 	}
+	else
+		BUG_ON(original_getattr != inode->i_op->getattr);
 
 	inode->i_op = &stub_operations;
 
@@ -455,6 +459,7 @@ static struct dentry *alloc_root(struct super_block *sb, struct dentry *orig_den
 
 	return root_dentry;
 }
+#endif
 
 #ifndef HAVE_PATH_LOOKUP
 extern int vfs_path_lookup(struct dentry *, struct vfsmount *,
