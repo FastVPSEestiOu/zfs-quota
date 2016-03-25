@@ -44,7 +44,7 @@
 #include <asm/unistd.h>
 #include <asm/uaccess.h>
 
-#define SIMFS_GET_LOWER_FS_SB(sb) sb->s_root->d_sb
+#define ZQFS_GET_LOWER_FS_SB(sb) sb->s_root->d_sb
 
 struct zqfs_fs_info {
 	struct vfsmount *real_mnt;
@@ -150,7 +150,7 @@ static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 #ifdef CONFIG_VE
 static int zqfs_start_write(struct super_block *sb, int level, bool wait)
 {
-	struct super_block *root_sb = SIMFS_GET_LOWER_FS_SB(sb);
+	struct super_block *root_sb = ZQFS_GET_LOWER_FS_SB(sb);
 
 	if (!__sb_start_write(root_sb, level, wait))
 		return 0;
@@ -165,7 +165,7 @@ static int zqfs_start_write(struct super_block *sb, int level, bool wait)
 
 static void zqfs_end_write(struct super_block *sb, int level)
 {
-	struct super_block *root_sb = SIMFS_GET_LOWER_FS_SB(sb);
+	struct super_block *root_sb = ZQFS_GET_LOWER_FS_SB(sb);
 
 	WARN_ONCE((current->transaction_info != sb), "Broken fs-transaction");
 
@@ -312,15 +312,15 @@ static struct super_operations zqfs_super_ops = {
 
 #if defined(CONFIG_EXPORTFS) || defined(CONFIG_EXPORTFS_MODULE)
 
-#define SIM_CALL_LOWER(method, sb, args...)		\
+#define ZQFS_CALL_LOWER(method, sb, args...)		\
 	struct super_block *lsb;			\
 	const struct export_operations *lop;		\
 							\
-	lsb = SIMFS_GET_LOWER_FS_SB(sb);		\
+	lsb = ZQFS_GET_LOWER_FS_SB(sb);		\
 	lop = lsb->s_export_op;				\
 	return lop->method(lsb, ## args)
 
-#define SIM_CALL_DENTRY(method, dentry, args...)	\
+#define ZQFS_CALL_DENTRY(method, dentry, args...)	\
 	struct super_block *lsb;			\
 	const struct export_operations *lop;		\
 							\
@@ -328,33 +328,51 @@ static struct super_operations zqfs_super_ops = {
 	lop = lsb->s_export_op;				\
 	return lop->method(dentry, ## args)
 
+#ifdef HAVE_ENCODE_FH_WITH_INODE
+#define ZQFS_CALL_INODE(method, inode, args...)	\
+	struct super_block *lsb;			\
+	const struct export_operations *lop;		\
+							\
+	lsb = (inode)->i_sb;				\
+	lop = lsb->s_export_op;				\
+	return lop->method(inode, ## args)
+#endif	/* #ifdef HAVE_ENCODE_FH_WITH_INODE */
+
+#ifdef HAVE_ENCODE_FH_WITH_INODE
+static int zqfs_encode_fh(struct inode *inode, __u32 *fh, int *max_len,
+			struct inode *parent)
+{
+	ZQFS_CALL_INODE(encode_fh, inode, fh, max_len, parent);
+}
+#else
 static int zqfs_encode_fh(struct dentry *de, __u32 *fh, int *max_len,
 			int connectable)
 {
-	SIM_CALL_DENTRY(encode_fh, de, fh, max_len, connectable);
+	ZQFS_CALL_DENTRY(encode_fh, de, fh, max_len, connectable);
 }
+#endif
 
 static struct dentry * zqfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
 			int fh_len, int fh_type)
 {
-	SIM_CALL_LOWER(fh_to_dentry, sb, fid, fh_len, fh_type);
+	ZQFS_CALL_LOWER(fh_to_dentry, sb, fid, fh_len, fh_type);
 }
 
 static struct dentry * zqfs_fh_to_parent(struct super_block *sb, struct fid *fid,
 			int fh_len, int fh_type)
 {
-	SIM_CALL_LOWER(fh_to_parent, sb, fid, fh_len, fh_type);
+	ZQFS_CALL_LOWER(fh_to_parent, sb, fid, fh_len, fh_type);
 }
 
 static int zqfs_get_name(struct dentry *parent, char *name,
 			struct dentry *child)
 {
-	SIM_CALL_DENTRY(get_name, parent, name, child);
+	ZQFS_CALL_DENTRY(get_name, parent, name, child);
 }
 
 static struct dentry * zqfs_get_parent(struct dentry *child)
 {
-	SIM_CALL_DENTRY(get_parent, child);
+	ZQFS_CALL_DENTRY(get_parent, child);
 }
 
 static int zqfs_init_export_op(struct super_block *sb, struct super_block *rsb)
