@@ -95,13 +95,13 @@ AC_DEFUN([AC_QUOTA_KQID],	[
 	ZFS_LINUX_TRY_COMPILE([
 		#include <linux/fs.h>
 		#include <linux/quota.h>
-	],[
+
 		int get_dqblk(struct super_block *sb, struct kqid kqid,
 				struct fs_disk_quota *fdq)
 		{
 			return 0;
 		}
-
+	],[
 		struct quotactl_ops quotactl_ops = {
 			.get_dqblk = get_dqblk
 		};
