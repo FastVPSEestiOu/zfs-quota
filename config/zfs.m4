@@ -85,3 +85,32 @@ AC_DEFUN([ZFS_AC_OBJECT_QUOTA],	[
 	])
 	EXTRA_KCFLAGS="$tmp_flags"
 ])
+
+dnl #
+dnl # AC_QUOTA_KQID checks if kernel uses kqid based interface for set/get
+dnl # quota and fs_disk_quota
+dnl #
+AC_DEFUN([AC_QUOTA_KQID],	[
+	AC_MSG_CHECKING([whether kernel uses kqid_t and fs_disk_quota])
+	ZFS_LINUX_TRY_COMPILE([
+		#include <linux/fs.h>
+		#include <linux/quota.h>
+	],[
+		int get_dqblk(struct super_block *sb, struct kqid kqid,
+				struct fs_disk_quota *fdq)
+		{
+			return 0;
+		}
+
+		struct quotactl_ops quotactl_ops = {
+			.get_dqblk = get_dqblk
+		};
+
+		(void) quotactl_ops;
+	],[
+		AC_MSG_RESULT([yes])
+		AC_DEFINE(QUOTA_KQID, 1, [Define if kernel uses kqid and fs_disk_quota])
+	],[
+		AC_MSG_RESULT([no])
+	])
+])

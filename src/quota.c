@@ -2,6 +2,11 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 
+#ifdef QUOTA_KQID
+#	include <linux/uidgid.h>
+#	include <linux/projid.h>
+#endif /* #ifdef QUOTA_KQID */
+
 #ifdef CONFIG_VE
 #	include <linux/vzquota.h>
 #	include <linux/virtinfo.h>
@@ -13,7 +18,7 @@
 
 #include "tree.h"
 
-int zfsquota_get_dqblk(struct super_block *sb, int type,
+static int zfsquota_get_dqblk(struct super_block *sb, int type,
 		       qid_t id, struct if_dqblk *di)
 {
 	printk("%s\n", __func__);
@@ -29,6 +34,104 @@ static int zfsquota_set_dqblk(struct super_block *sb, int type,
 	printk("%s\n", __func__);
 	return zqtree_set_quota_dqblk(sb, type, id, di);
 }
+
+#ifdef QUOTA_KQID
+static void copy_to_if_dqblk(struct if_dqblk *dst, struct fs_disk_quota *src)
+{
+	dst->dqb_bhardlimit = src->d_blk_hardlimit;
+	dst->dqb_bsoftlimit = src->d_blk_softlimit;
+	dst->dqb_curspace = src->d_bcount;
+	dst->dqb_ihardlimit = src->d_ino_hardlimit;
+	dst->dqb_isoftlimit = src->d_ino_softlimit;
+	dst->dqb_curinodes = src->d_icount;
+	dst->dqb_btime = src->d_btimer;
+	dst->dqb_itime = src->d_itimer;
+	dst->dqb_valid = QIF_ALL;
+}
+
+static void copy_from_if_dqblk(struct fs_disk_quota *dst, struct if_dqblk *src)
+{
+	dst->d_blk_hardlimit = src->dqb_bhardlimit;
+	dst->d_blk_softlimit  = src->dqb_bsoftlimit;
+	dst->d_bcount = src->dqb_curspace;
+	dst->d_ino_hardlimit = src->dqb_ihardlimit;
+	dst->d_ino_softlimit = src->dqb_isoftlimit;
+	dst->d_icount = src->dqb_curinodes;
+	dst->d_btimer = src->dqb_btime;
+	dst->d_itimer = src->dqb_itime;
+
+	dst->d_fieldmask = 0;
+	if (src->dqb_valid & QIF_BLIMITS)
+		dst->d_fieldmask |= FS_DQ_BSOFT | FS_DQ_BHARD;
+	if (src->dqb_valid & QIF_SPACE)
+		dst->d_fieldmask |= FS_DQ_BCOUNT;
+	if (src->dqb_valid & QIF_ILIMITS)
+		dst->d_fieldmask |= FS_DQ_ISOFT | FS_DQ_IHARD;
+	if (src->dqb_valid & QIF_INODES)
+		dst->d_fieldmask |= FS_DQ_ICOUNT;
+	if (src->dqb_valid & QIF_BTIME)
+		dst->d_fieldmask |= FS_DQ_BTIMER;
+	if (src->dqb_valid & QIF_ITIME)
+		dst->d_fieldmask |= FS_DQ_ITIMER;
+}
+
+static int get_qid_type(struct kqid kqid, qid_t *pqid, int *ptype)
+{
+	if (!pqid || !ptype)
+		return -EFAULT;
+
+	switch(kqid.type) {
+	case USRQUOTA:
+		*pqid = __kuid_val(kqid.uid);
+		*ptype = USRQUOTA;
+		break;
+	case GRPQUOTA:
+		*pqid = __kgid_val(kqid.gid);
+		*ptype = GRPQUOTA;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int zfsquota_get_fdq(struct super_block *sb, struct kqid kqid,
+		       struct fs_disk_quota *fdq)
+{
+	qid_t qid;
+	int type, ret;
+	struct if_dqblk dqblk;
+
+	ret = get_qid_type(kqid, &qid, &type);
+	if (ret)
+		return ret;
+
+	ret = zfsquota_get_dqblk(sb, type, qid, &dqblk);
+
+	if (ret == 0)
+		copy_from_if_dqblk(fdq, &dqblk);
+
+	return ret;
+}
+
+static int zfsquota_set_fdq(struct super_block *sb, struct kqid kqid,
+		       struct fs_disk_quota *fdq)
+{
+	qid_t qid;
+	int type, ret;
+	struct if_dqblk dqblk;
+
+	ret = get_qid_type(kqid, &qid, &type);
+	if (ret)
+		return ret;
+
+	copy_to_if_dqblk(&dqblk, fdq);
+
+	ret = zfsquota_set_dqblk(sb, type, qid, &dqblk);
+	return ret;
+}
+#endif /* QUOTA_KQID */
 
 static int zfsquota_get_info(struct super_block *sb, int type,
 			     struct if_dqinfo *ii)
@@ -69,8 +172,13 @@ struct quotactl_ops zfsquota_q_cops = {
 	.quota_sync = zfsquota_sync,
 	.get_info = zfsquota_get_info,
 	.set_info = zfsquota_set_info,
+#ifdef QUOTA_KQID
+	.get_dqblk = zfsquota_get_fdq,
+	.set_dqblk = zfsquota_set_fdq,
+#else /* #ifdef QUOTA_KQID */
 	.get_dqblk = zfsquota_get_dqblk,
 	.set_dqblk = zfsquota_set_dqblk,
+#endif /* #else #ifdef QUOTA_KQID */
 #ifdef CONFIG_QUOTA_COMPAT
 	.get_quoti = zfsquota_get_quoti,
 #endif
