@@ -114,8 +114,9 @@ static void quota_get_stat(struct inode *ino, struct kstatfs *buf)
 static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
 	int err;
+	struct dentry *orig_dentry = dentry->d_fsdata;
 
-	err = statfs_by_dentry(dentry, buf);
+	err = statfs_by_dentry(orig_dentry, buf);
 	if (err)
 		return err;
 
@@ -125,8 +126,8 @@ static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 #else /* #ifdef CONFIG_VE */
 static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
-	buf->f_blocks = 1; buf->f_bfree = 1; buf->f_bavail = 1;
-	return 0;
+	struct dentry *orig_dentry = dentry->d_fsdata;
+	return statfs_by_dentry(orig_dentry, buf);
 }
 #endif /* #else #ifdef CONFIG_VE */
 
@@ -293,8 +294,6 @@ static struct super_operations zqfs_super_ops = {
 #endif /* #ifdef CONFIG_VE */
 };
 
-#undef CONFIG_EXPORTFS
-#undef CONFIG_EXPORTFS_MODULE
 #if defined(CONFIG_EXPORTFS) || defined(CONFIG_EXPORTFS_MODULE)
 
 #define SIM_CALL_LOWER(method, sb, args...)		\
@@ -397,10 +396,11 @@ static int zqfs_root_getattr(struct vfsmount *mnt, struct dentry *dentry,
 	return ret;
 }
 
-static struct dentry *alloc_root(struct super_block *sb, struct inode *inode)
+static struct dentry *alloc_root(struct super_block *sb, struct dentry *orig_dentry)
 {
 	static struct inode_operations stub_operations;
 	struct dentry *root_dentry;
+	struct inode *inode = orig_dentry->d_inode;
 
 	if (stub_operations.lookup == NULL) {
 		stub_operations = *inode->i_op;
@@ -410,12 +410,14 @@ static struct dentry *alloc_root(struct super_block *sb, struct inode *inode)
 
 	inode->i_op = &stub_operations;
 
+	igrab(inode);
 #ifdef HAVE_D_MAKE_ROOT
 	root_dentry = d_make_root(inode);
 #else
 	root_dentry = d_alloc_root(inode);
 #endif
 	root_dentry->d_sb = sb;
+	root_dentry->d_fsdata = orig_dentry;
 
 	return root_dentry;
 }
@@ -431,7 +433,7 @@ int path_lookup(const char *name, unsigned int flags, struct nameidata *nd)
 
 	get_fs_root(current->fs, &fs_root);
 	err = vfs_path_lookup(fs_root.dentry, fs_root.mnt, name,
-			      flags|LOOKUP_ROOT, &nd->path);
+			      flags, &nd->path);
 	path_put(&fs_root);
 
 	return err;
@@ -483,7 +485,7 @@ static int zqfs_fill_super(struct super_block *s, void *data, int silent)
 
 
 	s->s_fs_info = fs_info;
-	s->s_root = alloc_root(s, nd.path.dentry->d_inode);
+	s->s_root = alloc_root(s, nd.path.dentry);
 	s->s_op = &zqfs_super_ops;
 	s->s_xattr = nd.path.dentry->d_sb->s_xattr;
 
@@ -548,6 +550,7 @@ static int __init init_zqfs(void)
 {
 	int err;
 
+	printk(KERN_WARNING "ZQFS module is a bloody hack mostly\n");
 	err = register_filesystem(&zq_fs_type);
 	if (err)
 		return err;
