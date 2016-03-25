@@ -1,5 +1,5 @@
 
-obj-m = zfs-quota.o
+obj-m = zfs-quota.o zqfs.o
 zfs-quota-y := quota.o tree.o zfs.o radix-tree-iter.o proc-vfsold.o proc-vfsv2.o
 ifneq ($(KERNELVERSION),)
  ifeq ($(CONFIG_VE),y)

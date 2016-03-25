@@ -207,6 +207,7 @@ static void zqfs_quota_free(struct super_block *sb)
 	(void) zfsquota_notify_quota_off(sb);
 }
 
+#ifdef CONFIG_VE
 static void zqfs_show_type(struct seq_file *m, struct super_block *sb)
 {
 #ifdef CONFIG_QUOTA
@@ -220,6 +221,7 @@ static void zqfs_show_type(struct seq_file *m, struct super_block *sb)
 #endif
 		seq_escape(m, sb->s_type->name, " \t\n\\");
 }
+#endif /* #ifdef CONFIG_VE */
 
 #ifdef CONFIG_VE
 static int zqfs_show_options(struct seq_file *m, struct vfsmount *mnt)
