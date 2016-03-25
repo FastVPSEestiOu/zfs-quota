@@ -115,8 +115,14 @@ static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
 	int err;
 	struct dentry *orig_dentry = dentry->d_fsdata;
+	struct zqfs_fs_info *fs_info = dentry->d_sb->s_fs_info;
+	struct path path = {
+		.mnt = mntget(fs_info->real_mnt),
+		.dentry = dget(orig_dentry)
+	};
 
-	err = statfs_by_dentry(orig_dentry, buf);
+	err = vfs_statfs(&path, buf);
+	path_put(&path);
 	if (err)
 		return err;
 
@@ -127,7 +133,17 @@ static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
 	struct dentry *orig_dentry = dentry->d_fsdata;
-	return statfs_by_dentry(orig_dentry, buf);
+	struct zqfs_fs_info *fs_info = dentry->d_sb->s_fs_info;
+	struct path path = {
+		.mnt = mntget(fs_info->real_mnt),
+		.dentry = dget(orig_dentry)
+	};
+	int err;
+
+	err = vfs_statfs(&path, buf);
+	path_put(&path);
+
+	return err;
 }
 #endif /* #else #ifdef CONFIG_VE */
 
