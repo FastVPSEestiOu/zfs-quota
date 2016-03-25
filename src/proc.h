@@ -4,6 +4,11 @@
 
 #define INO_MASK	0xec000000UL
 
+static inline int zfs_aquot_inode_masked(unsigned long i_ino)
+{
+	return ((i_ino) & INO_MASK) == INO_MASK;
+}
+
 static inline unsigned long zfs_aquot_getino(dev_t dev, int type)
 {
 	return INO_MASK | (dev << 8) | (type & 0xFF);

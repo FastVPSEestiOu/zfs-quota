@@ -15,9 +15,17 @@ static const char quota_group[] = "quota.group";
 static const char aquota_user[] = "aquota.user";
 static const char aquota_group[] = "aquota.group";
 
+int zqproc_ve_get_sb_type(struct inode *inode, struct super_block **psb,
+		       int *ptype);
+
 int zqproc_get_sb_type(struct inode *inode, struct super_block **psb,
 		       int *ptype)
 {
+#ifdef CONFIG_VE
+	if (zfs_aquot_inode_masked(inode->i_ino))
+		return zqproc_ve_get_sb_type(inode, psb, ptype);
+#endif
+
 	if (psb)
 		*psb = (struct super_block *)proc_get_parent_data(inode);
 	if (ptype)

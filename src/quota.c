@@ -266,6 +266,8 @@ struct vnotifier_block zfsquota_notifier_block = {
 
 int __init zfsquota_proc_init(void);
 void __exit zfsquota_proc_exit(void);
+int __init zfsquota_proc_ve_init(void);
+void __exit zfsquota_proc_ve_exit(void);
 int __init zfsquota_tree_init(void);
 int __init zfsquota_tree_exit(void);
 
@@ -275,6 +277,7 @@ static int __init zfsquota_init(void)
 	zfsquota_tree_init();
 
 #ifdef CONFIG_VE
+	zfsquota_proc_ve_init();
 	virtinfo_notifier_register(VITYPE_QUOTA, &zfsquota_notifier_block);
 #endif /* #ifdef CONFIG_VE */
 
@@ -288,6 +291,7 @@ static void __exit zfsquota_exit(void)
 	zfsquota_tree_exit();
 
 #ifdef CONFIG_VE
+	zfsquota_proc_ve_exit();
 	virtinfo_notifier_unregister(VITYPE_QUOTA, &zfsquota_notifier_block);
 #endif /* #ifdef CONFIG_VE */
 

@@ -196,7 +196,7 @@ out:
 	return ERR_PTR(-ENOENT);
 }
 
-int zqproc_get_sb_type(struct inode *inode, struct super_block **psb,
+int zqproc_ve_get_sb_type(struct inode *inode, struct super_block **psb,
 		       int *ptype)
 {
 	int err, type;
@@ -499,13 +499,7 @@ static struct inode_operations zfs_aquotd_inode_operations = {
 	.getattr = &zfs_aquotd_getattr,
 };
 
-struct proc_dir_entry* zqproc_register_handle(struct super_block *sb)
-{
-	(void) sb;
-	return NULL;
-}
-
-int __init zfsquota_proc_init(void)
+int __init zfsquota_proc_ve_init(void)
 {
 	glob_zfsquota_proc =
 	    create_proc_entry("zfsquota", S_IFDIR | S_IRUSR | S_IXUSR,
@@ -517,8 +511,7 @@ int __init zfsquota_proc_init(void)
 	return 0;
 }
 
-void __exit zfsquota_proc_exit(void)
+void __exit zfsquota_proc_ve_exit(void)
 {
-	remove_proc_entry("zfsquota", glob_proc_vz_dir
-			);
+	remove_proc_entry("zfsquota", glob_proc_vz_dir);
 }
