@@ -438,19 +438,13 @@ int path_lookup(const char *name, unsigned int flags, struct nameidata *nd)
 }
 #endif /* #ifdef HAVE_PATH_LOOKUP */
 
-struct super_data {
-	char *opt;
-	struct vfsmount *mnt;
-};
-
 static int zqfs_fill_super(struct super_block *s, void *data, int silent)
 {
 	int err;
 	struct zqfs_fs_info *fs_info = NULL;
 	struct nameidata nd;
-	struct super_data *sd = data;
-	struct vfsmount *mnt = sd->mnt;
-	char *root = sd->opt;
+
+	char *root = data;
 	char *devname;
 
 
@@ -485,7 +479,7 @@ static int zqfs_fill_super(struct super_block *s, void *data, int silent)
 
 	strncpy(fs_info->fake_dev_name, devname,
 		sizeof(fs_info->fake_dev_name));
-	fs_info->real_mnt = mntget(mnt ? mnt : nd.path.mnt);
+	fs_info->real_mnt = mntget(nd.path.mnt);
 
 
 	s->s_fs_info = fs_info;
@@ -508,21 +502,13 @@ out_err:
 static struct dentry *zqfs_mount(struct file_system_type *type, int flags,
 		const char *dev_name, void *data)
 {
-	struct super_data sd = {
-		.opt = opt,
-		.mnt = NULL
-	};
-	return mount_nodev(type, flags, &sd, zqfs_fill_super);
+	return mount_nodev(type, flags, data, zqfs_fill_super);
 }
 #else /* #ifdef HAVE_MOUNT_NODEV */
 static int zqfs_get_sb(struct file_system_type *type, int flags,
 		const char *dev_name, void *opt, struct vfsmount *mnt)
 {
-	struct super_data sd = {
-		.opt = opt,
-		.mnt = mnt
-	};
-	return get_sb_nodev(type, flags, &sd, zqfs_fill_super, mnt);
+	return get_sb_nodev(type, flags, opt, zqfs_fill_super, mnt);
 }
 #endif /* #else #ifdef HAVE_MOUNT_NODEV */
 
