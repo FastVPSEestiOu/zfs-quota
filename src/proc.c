@@ -18,6 +18,28 @@ static const char aquota_group[] = "aquota.group";
 int zqproc_ve_get_sb_type(struct inode *inode, struct super_block **psb,
 		       int *ptype);
 
+#ifndef proc_get_parent_data
+void *proc_get_parent_data(struct inode *inode)
+{
+	return PROC_I(inode)->pde->parent->data;
+}
+#endif
+
+#ifndef proc_mkdir_data
+struct proc_dir_entry *proc_mkdir_data(const char *name, mode_t mode,
+		struct proc_dir_entry *parent, void *data)
+{
+	struct proc_dir_entry *pde;
+	pde = proc_mkdir(name, parent);
+	if (pde) {
+		if (mode)
+			pde->mode = S_IFDIR | mode;
+		pde->data = data;
+	}
+	return pde;
+}
+#endif
+
 int zqproc_get_sb_type(struct inode *inode, struct super_block **psb,
 		       int *ptype)
 {
@@ -41,13 +63,14 @@ struct proc_dir_entry* zqproc_register_handle(struct super_block *sb)
 	char buf[32];
 
 	sprintf(buf, "%08x", new_encode_dev(sb->s_dev));
-	dev_dir = proc_mkdir_data(buf, S_IRWXU, zfsquota_proc_root, sb);
+	dev_dir = proc_mkdir_data(buf, S_IRUSR | S_IXUSR,
+				zfsquota_proc_root, sb);
 
-	proc_create_data(aquota_user, S_IRWXU, dev_dir,
+	proc_create_data(aquota_user, S_IRUSR, dev_dir,
 			 &zfs_aquotf_vfsv2r1_file_operations,
 			 (void *)USRQUOTA);
 
-	proc_create_data(aquota_group, S_IRWXU, dev_dir,
+	proc_create_data(aquota_group, S_IRUSR, dev_dir,
 			 &zfs_aquotf_vfsv2r1_file_operations,
 			 (void *)GRPQUOTA);
 
@@ -56,11 +79,15 @@ struct proc_dir_entry* zqproc_register_handle(struct super_block *sb)
 
 int __init zfsquota_proc_init(void)
 {
-	zfsquota_proc_root = proc_mkdir_mode("zfsquota", S_IRWXU, NULL);
+	zfsquota_proc_root = proc_mkdir_data("zfsquota", S_IRWXU, NULL, NULL);
 	return 0;
 }
 
 void __exit zfsquota_proc_exit(void)
 {
+#ifdef proc_remove
 	proc_remove(zfsquota_proc_root);
+#else
+	remove_proc_entry("zfsquota", NULL);
+#endif
 }
