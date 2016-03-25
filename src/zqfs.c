@@ -31,6 +31,9 @@
 #include <linux/dcache.h>
 #include <linux/fs_struct.h>
 
+#include <spl_config.h>
+#include <zfs_config.h>
+
 #ifdef CONFIG_VE
 #	include <linux/vzquota.h>
 #	include <linux/virtinfo.h>
@@ -379,9 +382,6 @@ static void zqfs_free_export_op(struct super_block *sb)
 }
 #endif
 
-extern int vfs_path_lookup(struct dentry *, struct vfsmount *,
-                           const char *, unsigned int, struct path *);
-
 int (*original_getattr)(struct vfsmount *mnt, struct dentry *dentry,
 		        struct kstat *stat) = NULL;
 
@@ -410,20 +410,49 @@ static struct dentry *alloc_root(struct super_block *sb, struct inode *inode)
 
 	inode->i_op = &stub_operations;
 
+#ifdef HAVE_D_MAKE_ROOT
 	root_dentry = d_make_root(inode);
+#else
+	root_dentry = d_alloc_root(inode);
+#endif
 	root_dentry->d_sb = sb;
 
 	return root_dentry;
 }
 
+#ifndef HAVE_PATH_LOOKUP
+extern int vfs_path_lookup(struct dentry *, struct vfsmount *,
+                           const char *, unsigned int, struct path *);
+
+int path_lookup(const char *name, unsigned int flags, struct nameidata *nd)
+{
+	struct path fs_root;
+	int err;
+
+	get_fs_root(current->fs, &fs_root);
+	err = vfs_path_lookup(fs_root.dentry, fs_root.mnt, name,
+			      flags|LOOKUP_ROOT, &nd->path);
+	path_put(&fs_root);
+
+	return err;
+}
+#endif /* #ifdef HAVE_PATH_LOOKUP */
+
+struct super_data {
+	char *opt;
+	struct vfsmount *mnt;
+};
+
 static int zqfs_fill_super(struct super_block *s, void *data, int silent)
 {
 	int err;
 	struct zqfs_fs_info *fs_info = NULL;
-	struct path fs_root, path;
-
-	char *root = data;
+	struct nameidata nd;
+	struct super_data *sd = data;
+	struct vfsmount *mnt = sd->mnt;
+	char *root = sd->opt;
 	char *devname;
+
 
 	err = -EINVAL;
 	if (root == NULL)
@@ -437,14 +466,11 @@ static int zqfs_fill_super(struct super_block *s, void *data, int silent)
 	if (*devname == 0)
 		goto out_err;
 
-	get_fs_root(current->fs, &fs_root);
-	err = vfs_path_lookup(fs_root.dentry, fs_root.mnt, root,
-			      LOOKUP_FOLLOW|LOOKUP_DIRECTORY, &path);
-	path_put(&fs_root);
+	err = path_lookup(root, LOOKUP_FOLLOW|LOOKUP_DIRECTORY, &nd);
 	if (err)
 		goto out_err;
 
-	err = zqfs_init_export_op(s, path.dentry->d_sb);
+	err = zqfs_init_export_op(s, nd.path.dentry->d_sb);
 	if (err)
 		goto out_path;
 
@@ -459,32 +485,46 @@ static int zqfs_fill_super(struct super_block *s, void *data, int silent)
 
 	strncpy(fs_info->fake_dev_name, devname,
 		sizeof(fs_info->fake_dev_name));
-
-	fs_info->real_mnt = mntget(path.mnt);
+	fs_info->real_mnt = mntget(mnt ? mnt : nd.path.mnt);
 
 
 	s->s_fs_info = fs_info;
-	s->s_root = alloc_root(s, path.dentry->d_inode);
+	s->s_root = alloc_root(s, nd.path.dentry->d_inode);
 	s->s_op = &zqfs_super_ops;
-	s->s_xattr = path.dentry->d_sb->s_xattr;
+	s->s_xattr = nd.path.dentry->d_sb->s_xattr;
 
-	path_put(&path);
+	path_put(&nd.path);
 
 	zqfs_quota_init(s);
 	return 0;
 
 out_path:
-	path_put(&path);
+	path_put(&nd.path);
 out_err:
-	printk("err = %d\n", err);
 	return err;
 }
 
+#ifdef HAVE_MOUNT_NODEV
 static struct dentry *zqfs_mount(struct file_system_type *type, int flags,
 		const char *dev_name, void *data)
 {
-	return mount_nodev(type, flags, data, zqfs_fill_super);
+	struct super_data sd = {
+		.opt = opt,
+		.mnt = NULL
+	};
+	return mount_nodev(type, flags, &sd, zqfs_fill_super);
 }
+#else /* #ifdef HAVE_MOUNT_NODEV */
+static int zqfs_get_sb(struct file_system_type *type, int flags,
+		const char *dev_name, void *opt, struct vfsmount *mnt)
+{
+	struct super_data sd = {
+		.opt = opt,
+		.mnt = mnt
+	};
+	return get_sb_nodev(type, flags, &sd, zqfs_fill_super, mnt);
+}
+#endif /* #else #ifdef HAVE_MOUNT_NODEV */
 
 static void zqfs_kill_sb(struct super_block *sb)
 {
@@ -507,7 +547,11 @@ static void zqfs_kill_sb(struct super_block *sb)
 static struct file_system_type zq_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "zqfs",
+#ifdef HAVE_MOUNT_NODEV
 	.mount		= zqfs_mount,
+#else /* #ifdef HAVE_MOUNT_NODEV */
+	.get_sb		= zqfs_get_sb,
+#endif /* #else #ifdef HAVE_MOUNT_NODEV */
 	.kill_sb	= zqfs_kill_sb,
 #ifdef FS_HAS_NEW_FREEZE
 	.fs_flags	= FS_HAS_NEW_FREEZE,

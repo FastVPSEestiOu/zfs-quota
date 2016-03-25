@@ -114,3 +114,21 @@ AC_DEFUN([AC_QUOTA_KQID],	[
 		AC_MSG_RESULT([no])
 	])
 ])
+
+dnl #
+dnl # AC_PATH_LOOKUP checks if path_lookup is accessible
+dnl #
+AC_DEFUN([AC_PATH_LOOKUP],	[
+	AC_MSG_CHECKING([whether path_lookup is accessible])
+	ZFS_LINUX_TRY_COMPILE([
+		#include <linux/fs.h>
+		#include <linux/namei.h>
+	],[
+		path_lookup(NULL, 0, NULL);
+	],[
+		AC_MSG_RESULT([yes])
+		AC_DEFINE(HAVE_PATH_LOOKUP, 1, [Define if path_lookup is exported])
+	],[
+		AC_MSG_RESULT([no])
+	])
+])
