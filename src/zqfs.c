@@ -417,6 +417,11 @@ static struct dentry *alloc_root(struct super_block *sb, struct dentry *orig_den
 static int free_root(struct super_block *sb)
 {
 	struct dentry *dentry = sb->s_root;
+	struct zqfs_fs_info *fs_info = sb->s_fs_info;
+
+	if (fs_info)
+		mntput(fs_info->real_mnt);
+	kfree(fs_info);
 
 	dput(dentry);
 	sb->s_root = NULL;
@@ -473,13 +478,18 @@ static int free_root(struct super_block *sb)
 {
 	struct dentry *dentry = sb->s_root;
 	struct inode *inode = dentry->d_inode;
+	struct zqfs_fs_info *fs_info = sb->s_fs_info;
 
 	if (inode->i_op == &stub_operations) {
 		inode->i_op = original_inode_ops;
 		module_put(THIS_MODULE);
 	}
 
-	iput(inode);
+	if (fs_info)
+		mntput(fs_info->real_mnt);
+	kfree(fs_info);
+
+	printk("inode = %p, inode->i_count = %d\n", inode, atomic_read(&inode->i_count));
 
 	return 0;
 }
@@ -579,20 +589,14 @@ static int zqfs_get_sb(struct file_system_type *type, int flags,
 
 static void zqfs_kill_sb(struct super_block *sb)
 {
-	struct zqfs_fs_info *fs_info = sb->s_fs_info;
-
-	if (fs_info)
-		mntput(fs_info->real_mnt);
-
 	free_root(sb);
+
 	zqfs_free_export_op(sb);
 
 	zqfs_quota_free(sb);
 	zqfs_free_blkdev(sb);
 
 	kill_anon_super(sb);
-
-	kfree(fs_info);
 }
 
 static struct file_system_type zq_fs_type = {
