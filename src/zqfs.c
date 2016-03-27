@@ -413,16 +413,26 @@ static struct dentry *alloc_root(struct super_block *sb, struct dentry *orig_den
 {
 	return dget(orig_dentry);
 }
+
+static int free_root(struct super_block *sb)
+{
+	struct dentry *dentry = sb->s_root;
+
+	dput(dentry);
+	sb->s_root = NULL;
+
+	return 0;
+}
 #else
-int (*original_getattr)(struct vfsmount *mnt, struct dentry *dentry,
-		        struct kstat *stat) = NULL;
+static const struct inode_operations *original_inode_ops = NULL;
+static struct inode_operations stub_operations;
 
 static int zqfs_root_getattr(struct vfsmount *mnt, struct dentry *dentry,
 			     struct kstat *stat)
 {
 	int ret;
 
-	ret = original_getattr(mnt, dentry, stat);
+	ret = original_inode_ops->getattr(mnt, dentry, stat);
 	if (!ret)
 		stat->dev = dentry->d_sb->s_dev;
 
@@ -431,24 +441,23 @@ static int zqfs_root_getattr(struct vfsmount *mnt, struct dentry *dentry,
 
 static struct dentry *alloc_root(struct super_block *sb, struct dentry *orig_dentry)
 {
-	static struct inode_operations stub_operations;
 	struct dentry *root_dentry;
 	struct inode *inode = orig_dentry->d_inode;
 
-	if (original_getattr == NULL) {
-		stub_operations = *inode->i_op;
-		original_getattr = stub_operations.getattr;
+	if (original_inode_ops == NULL) {
+		original_inode_ops = inode->i_op;
+		stub_operations = *original_inode_ops;
 		stub_operations.getattr = zqfs_root_getattr;
 
 		printk(KERN_INFO "ZQFS module is now referenced forever\n");
-		module_get(THIS_MODULE);
+		(void) try_module_get(THIS_MODULE);
 	}
 	else
-		BUG_ON(original_getattr != inode->i_op->getattr);
+		BUG_ON(original_inode_ops != inode->i_op);
 
 	inode->i_op = &stub_operations;
 
-	igrab(inode);
+	inode = igrab(inode);
 #ifdef HAVE_D_MAKE_ROOT
 	root_dentry = d_make_root(inode);
 #else
@@ -458,6 +467,21 @@ static struct dentry *alloc_root(struct super_block *sb, struct dentry *orig_den
 	root_dentry->d_fsdata = orig_dentry;
 
 	return root_dentry;
+}
+
+static int free_root(struct super_block *sb)
+{
+	struct dentry *dentry = sb->s_root;
+	struct inode *inode = dentry->d_inode;
+
+	if (inode->i_op == &stub_operations) {
+		inode->i_op = original_inode_ops;
+		module_put(THIS_MODULE);
+	}
+
+	iput(inode);
+
+	return 0;
 }
 #endif
 
@@ -557,10 +581,10 @@ static void zqfs_kill_sb(struct super_block *sb)
 {
 	struct zqfs_fs_info *fs_info = sb->s_fs_info;
 
-	dput(sb->s_root);
-	sb->s_root = NULL;
 	if (fs_info)
 		mntput(fs_info->real_mnt);
+
+	free_root(sb);
 	zqfs_free_export_op(sb);
 
 	zqfs_quota_free(sb);
