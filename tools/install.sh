@@ -57,6 +57,7 @@ install_zfs_quota() {
 	ssh-keyscan -t rsa,dsa -H github.com >> ~/.ssh/known_hosts
 	git clone git@github.com:paboldin/zfs-quota.git || :
 	pushd zfs-quota
+	automake --force-missing --add-missing 1>/dev/null 2>&1 || :
 	autoreconf -fisv
 	./configure --with-linux-obj=$KDIR
 	make -j
