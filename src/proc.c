@@ -18,27 +18,10 @@ static const char aquota_group[] = "aquota.group";
 int zqproc_ve_get_sb_type(struct inode *inode, struct super_block **psb,
 		       int *ptype);
 
-#ifndef proc_get_parent_data
-void *proc_get_parent_data(struct inode *inode)
-{
-	return PROC_I(inode)->pde->parent->data;
-}
-#endif
+void *proc_get_parent_data(const struct inode *inode);
 
-#ifndef proc_mkdir_data
-struct proc_dir_entry *proc_mkdir_data(const char *name, mode_t mode,
-		struct proc_dir_entry *parent, void *data)
-{
-	struct proc_dir_entry *pde;
-	pde = proc_mkdir(name, parent);
-	if (pde) {
-		if (mode)
-			pde->mode = S_IFDIR | mode;
-		pde->data = data;
-	}
-	return pde;
-}
-#endif
+struct proc_dir_entry *proc_mkdir_data(const char *name, umode_t mode,
+		struct proc_dir_entry *parent, void *data);
 
 int zqproc_get_sb_type(struct inode *inode, struct super_block **psb,
 		       int *ptype)
@@ -85,7 +68,7 @@ int __init zfsquota_proc_init(void)
 
 void __exit zfsquota_proc_exit(void)
 {
-#ifdef proc_remove
+#ifndef CONFIG_VE
 	proc_remove(zfsquota_proc_root);
 #else
 	remove_proc_entry("zfsquota", NULL);
