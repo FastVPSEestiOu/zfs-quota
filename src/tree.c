@@ -124,6 +124,8 @@ int zqtree_free_superblock(struct super_block *sb)
 
 	mutex_lock(&zqhandle_tree_mutex);
 	handle = radix_tree_delete(&zqhandle_tree, (unsigned long)sb);
+
+	zqproc_unregister_handle(sb);
 	mutex_unlock(&zqhandle_tree_mutex);
 
 	if (handle == NULL)

@@ -60,6 +60,14 @@ struct proc_dir_entry* zqproc_register_handle(struct super_block *sb)
 	return dev_dir;
 }
 
+int zqproc_unregister_handle(struct super_block *sb)
+{
+	char buf[32];
+	sprintf(buf, "%08x", new_encode_dev(sb->s_dev));
+
+	return remove_proc_subtree(buf, zfsquota_proc_root);
+}
+
 int __init zfsquota_proc_init(void)
 {
 	zfsquota_proc_root = proc_mkdir_data("zfsquota", S_IRWXU, NULL, NULL);
