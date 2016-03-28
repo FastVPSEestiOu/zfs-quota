@@ -1,0 +1,18 @@
+#!/bin/sh
+
+PROG=$0
+
+while getopts "a:k:n:t:v:" opt; do
+    case $opt in
+        a) arch=$OPTARG    ;;
+        k) kver=$OPTARG    ;;
+        n) pkgname=$OPTARG ;;
+        t) tree=$OPTARG    ;;
+        v) pkgver=$OPTARG  ;;
+    esac
+done
+
+automake --force-missing --add-missing 1>/dev/null 2>&1
+autoreconf -fisv
+./configure --with-linux-obj=/lib/modules/${kver}/build --prefix=/usr
+
