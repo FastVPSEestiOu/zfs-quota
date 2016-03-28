@@ -196,11 +196,15 @@ AC_DEFUN([ZFSQUOTA_AC_ZFS], [
 	dnl #
 	AC_MSG_CHECKING([zfs build directory])
 
-	all_zfs_config_locs="${zfssrc}/${LINUX_VERSION}
+	DKMS_BUILD_DIR=/var/lib/dkms/zfs/${ZFSVERSION}/${LINUX_VERSION}/x86_64
+	all_zfs_config_locs="$DKMS_BUILD_DIR
+	${zfssrc}/${LINUX_VERSION}
 	${zfssrc}"
 
 	AS_IF([test -z "$zfsbuild"], [
-		AS_IF([ test -e "${zfssrc}/${LINUX_VERSION}/zfs_config.h" ], [
+		AS_IF([ test -e "${DKMS_BUILD_DIR}/zfs_config.h" ], [
+			zfsbuild="${DKMS_BUILD_DIR}"
+		], [ test -e "${zfssrc}/${LINUX_VERSION}/zfs_config.h" ], [
 			zfsbuild="${zfssrc}/${LINUX_VERSION}"
 		], [ test -e "${zfssrc}/zfs_config.h" ], [
 			zfsbuild="${zfssrc}"
@@ -313,11 +317,15 @@ AC_DEFUN([ZFS_AC_SPL], [
 	dnl #
 	AC_MSG_CHECKING([spl build directory])
 
-	all_spl_config_locs="${splsrc}/${LINUX_VERSION}
+	DKMS_BUILD_DIR=/var/lib/dkms/spl/${ZFSVERSION}/${LINUX_VERSION}/x86_64
+	all_spl_config_locs="$DKMS_BUILD_DIR
+	${splsrc}/${LINUX_VERSION}
 	${splsrc}"
 
 	AS_IF([test -z "$splbuild"], [
-		AS_IF([ test -e "${splsrc}/${LINUX_VERSION}/spl_config.h" ], [
+		AS_IF([ test -e "${DKMS_BUILD_DIR}/spl_config.h" ], [
+			splbuild="${DKMS_BUILD_DIR}"
+		], [ test -e "${splsrc}/${LINUX_VERSION}/spl_config.h" ], [
 			splbuild="${splsrc}/${LINUX_VERSION}"
 		], [ test -e "${splsrc}/spl_config.h" ], [
 			splbuild="${splsrc}"
