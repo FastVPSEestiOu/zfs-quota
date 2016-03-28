@@ -21,8 +21,6 @@
 static int zfsquota_get_dqblk(struct super_block *sb, int type,
 		       qid_t id, struct if_dqblk *di)
 {
-	printk("%s\n", __func__);
-
 	memset(di, 0, sizeof(*di));
 
 	return zqtree_get_quota_dqblk(sb, type, id, di);
@@ -31,7 +29,6 @@ static int zfsquota_get_dqblk(struct super_block *sb, int type,
 static int zfsquota_set_dqblk(struct super_block *sb, int type,
 			      qid_t id, struct if_dqblk *di)
 {
-	printk("%s\n", __func__);
 	return zqtree_set_quota_dqblk(sb, type, id, di);
 }
 
@@ -136,7 +133,6 @@ static int zfsquota_set_fdq(struct super_block *sb, struct kqid kqid,
 static int zfsquota_get_info(struct super_block *sb, int type,
 			     struct if_dqinfo *ii)
 {
-	printk("%s\n", __func__);
 	memset(ii, 0, sizeof(*ii));
 	return 0;
 }
@@ -144,7 +140,6 @@ static int zfsquota_get_info(struct super_block *sb, int type,
 static int zfsquota_set_info(struct super_block *sb, int type,
 			     struct if_dqinfo *ii)
 {
-	printk("%s\n", __func__);
 	return 0;
 }
 
@@ -152,14 +147,12 @@ static int zfsquota_set_info(struct super_block *sb, int type,
 static int zfsquota_get_quoti(struct super_block *sb, int type, qid_t idx,
 			      struct v2_disk_dqblk __user * dqblk)
 {
-	printk("%s\n", __func__);
 	return 0;
 }
 #endif /* #ifdef CONFIG_QUOTA_COMPAT */
 
 static int zfsquota_sync(struct super_block *sb, int type)
 {
-	printk("%s\n", __func__);
 	if (type == -1) {
 		zqtree_zfs_sync_tree(sb, USRQUOTA);
 		zqtree_zfs_sync_tree(sb, GRPQUOTA);

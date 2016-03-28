@@ -45,7 +45,6 @@ static int zfs_aquotq_readdir(struct file *file, void *data, filldir_t filler)
 {
 	loff_t n;
 	int err;
-	printk("%s\n", __func__);
 
 	n = file->f_pos;
 	for (err = 0; !err; n++) {
@@ -146,7 +145,6 @@ static struct dentry *zfs_aquotq_lookup(struct inode *dir,
 	struct inode *inode;
 	struct zfs_aquotq_lookdata d;
 	int k, fmt;
-	printk("%s\n", __func__);
 
 	if (dentry->d_name.len == sizeof(quota_user) - 1) {
 		if (memcmp(dentry->d_name.name, quota_user,
@@ -332,8 +330,6 @@ static int zfs_aquotd_readdir(struct file *file, void *data, filldir_t filler)
 	char buf[24];
 	int l, err;
 
-	printk("%s\n", __func__);
-
 	i = 0;
 	n = file->f_pos;
 
@@ -426,8 +422,6 @@ static struct dentry *zfs_aquotd_lookup(struct inode *dir,
 	int l;
 	dev_t dev;
 	struct inode *inode;
-
-	printk("%s\n", __func__);
 
 	ve = dir->i_sb->s_type->owner_env;
 	old_ve = set_exec_env(ve);

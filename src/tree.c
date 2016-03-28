@@ -249,7 +249,8 @@ struct quota_data *zqtree_get_filled_quota_data(void *sb, int type, qid_t id)
 
 void zqtree_print_quota_data(struct quota_data *qd)
 {
-	printk("qd = %p, { .qid = %u, .space_used = %Lu, .space_quota = %Lu"
+	printk(KERN_DEBUG "qd = %p, "
+	       "{ .qid = %u, .space_used = %Lu, .space_quota = %Lu"
 #ifdef HAVE_OBJECT_QUOTA
 	       ", .obj_used = %Lu, .obj_quota = %Lu"
 #endif /* HAVE_OBJECT_QUOTA */
@@ -265,7 +266,8 @@ int zqtree_print_tree(struct quota_tree *quota_tree)
 	my_radix_tree_iter_t iter;
 	struct quota_data *qd;
 
-	printk("quota_tree = %p, version = %u\n", quota_tree, quota_tree->version);
+	printk(KERN_DEBUG "quota_tree = %p, version = %u\n", quota_tree,
+		quota_tree->version);
 	for (my_radix_tree_iter_start(&iter, &quota_tree->radix, 0);
 	     (qd = my_radix_tree_iter_item(&iter));
 	     my_radix_tree_iter_next(&iter, qd->qid)) {

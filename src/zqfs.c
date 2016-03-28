@@ -454,8 +454,7 @@ static struct dentry *alloc_root(struct super_block *sb, struct dentry *orig_den
 		stub_operations = *original_inode_ops;
 		stub_operations.getattr = zqfs_root_getattr;
 
-		printk(KERN_INFO "ZQFS module is now referenced forever\n");
-		(void) try_module_get(THIS_MODULE);
+		__module_get(THIS_MODULE);
 	}
 	else
 		BUG_ON(original_inode_ops != inode->i_op);
@@ -488,8 +487,6 @@ static int free_root(struct super_block *sb)
 	if (fs_info)
 		mntput(fs_info->real_mnt);
 	kfree(fs_info);
-
-	printk("inode = %p, inode->i_count = %d\n", inode, atomic_read(&inode->i_count));
 
 	return 0;
 }

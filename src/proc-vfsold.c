@@ -51,7 +51,6 @@ static int read_proc_quotafile(char *page, off_t off, int count,
 	my_radix_tree_iter_t iter;
 	struct quota_data *qd;
 	struct v1_disk_dqblk *buf = (struct v1_disk_dqblk *)page;
-	printk("%s\n", __func__);
 
 	memset(page, 0, count);
 
@@ -117,7 +116,6 @@ static ssize_t zfs_aquotf_vfsold_read(struct file *file,
 	ssize_t l, l2, copied;
 	struct quota_tree *quota_tree = file->private_data;
 	int err;
-	printk("%s\n", __func__);
 
 	err = -ENOMEM;
 	page = (char *)__get_free_page(GFP_KERNEL);
