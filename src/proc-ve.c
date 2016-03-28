@@ -513,7 +513,7 @@ static struct inode_operations zfs_aquotd_inode_operations = {
 int __init zfsquota_proc_ve_init(void)
 {
 	glob_zfsquota_proc =
-	    create_proc_entry("zfsquota", S_IFDIR | S_IRUSR | S_IXUSR,
+	    create_proc_entry("vzaquota", S_IFDIR | S_IRUSR | S_IXUSR,
 			      glob_proc_vz_dir
 			    );
 	glob_zfsquota_proc->proc_iops = &zfs_aquotd_inode_operations;
@@ -524,5 +524,5 @@ int __init zfsquota_proc_ve_init(void)
 
 void __exit zfsquota_proc_ve_exit(void)
 {
-	remove_proc_entry("zfsquota", glob_proc_vz_dir);
+	remove_proc_entry("vzaquota", glob_proc_vz_dir);
 }
