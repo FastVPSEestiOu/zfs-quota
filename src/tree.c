@@ -177,7 +177,7 @@ static void zqhandle_put_tree(struct zqhandle *handle, struct quota_tree *qt)
 }
 
 /* must be called with quota_tree->mutex taken */
-struct quota_data *zqtree_lookup_quota_data(
+struct quota_data *zqtree_get_quota_data(
 	struct quota_tree *quota_tree, qid_t id)
 {
 	int err;
@@ -205,8 +205,8 @@ struct quota_data *zqtree_lookup_quota_data(
 	return quota_data;
 }
 
-struct quota_data *zqtree_lookup_quota_type(struct zqhandle *handle, int type,
-					    qid_t id)
+struct quota_data *zqtree_get_quota_data_type(struct zqhandle *handle,
+					      int type, qid_t id)
 {
 	struct quota_tree *quota_tree;
 	struct quota_data *quota_data;
@@ -217,7 +217,7 @@ struct quota_data *zqtree_lookup_quota_type(struct zqhandle *handle, int type,
 		return NULL;
 
 	mutex_lock(&quota_tree->mutex);
-	quota_data = zqtree_lookup_quota_data(quota_tree, id);
+	quota_data = zqtree_get_quota_data(quota_tree, id);
 	mutex_unlock(&quota_tree->mutex);
 
 	zqhandle_put_tree(handle, quota_tree);
@@ -233,7 +233,7 @@ struct quota_data *zqtree_get_filled_quota_data(void *sb, int type, qid_t id)
 	struct zqhandle *handle = zqhandle_get(sb);
 	struct quota_data *quota_data;
 
-	quota_data = zqtree_lookup_quota_type(handle, type, id);
+	quota_data = zqtree_get_quota_data_type(handle, type, id);
 
 	if (zfsquota_fill_quotadata(handle->zfsh, quota_data, type,
 				    id)) {
@@ -412,7 +412,7 @@ static int zqtree_iterate_prop(void *zfsh,
 	for (zfs_prop_iter_start(zfsh, prop->prop, &iter);
 	     (pair = zfs_prop_iter_item(&iter)); zfs_prop_iter_next(&iter)) {
 
-		qd = zqtree_lookup_quota_data(quota_tree, pair->rid);
+		qd = zqtree_get_quota_data(quota_tree, pair->rid);
 		qd->version = version;
 		*(uint64_t *)((void *)qd + prop->offset) = pair->value;
 	}
