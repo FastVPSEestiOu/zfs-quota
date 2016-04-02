@@ -300,9 +300,8 @@ int zqtree_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
 	quota_data = zqtree_get_filled_quota_data(sb, type, id);
 
 	if (!quota_data)
-		return -EIO;	/* FIXME */
+		return -EIO;
 
-	/* FIXME check for endianness */
 	di->dqb_curspace = quota_data->space_used;
 	di->dqb_valid |= QIF_SPACE;
 	if (quota_data->space_quota) {
@@ -324,7 +323,7 @@ int zqtree_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
 
 static inline uint64_t min_except_zero(uint64_t a, uint64_t b)
 {
-	return min(a ? a : b, b ? b : a);
+	return min(a ?: b, b ?: a);
 }
 
 int zqtree_set_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
@@ -453,7 +452,7 @@ struct quota_tree *zqtree_get_sync_quota_tree(void *sb, int type)
 	for (prop = props; prop->prop >= 0; ++prop) {
 		ret = zqtree_iterate_prop(handle->zfsh, quota_tree, prop,
 					  version);
-		if (ret)
+		if (ret && ret != EOPNOTSUPP)
 			break;
 	}
 
@@ -463,7 +462,7 @@ struct quota_tree *zqtree_get_sync_quota_tree(void *sb, int type)
 	wmb();
 
 out:
-	if (ret) {
+	if (ret && ret != EOPNOTSUPP) {
 		zqhandle_put_tree(handle, quota_tree);
 		quota_tree = NULL;
 	}
