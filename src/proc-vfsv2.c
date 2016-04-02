@@ -260,7 +260,7 @@ static int qtree_output_block_leaf(char *buf, struct qtree_block *leaf_block)
 				/* Skip the leaf  */
 				continue;
 
-			ref[leaf->qd->qid % 255] =
+			ref[leaf->qd->qid & 255] =
 			    cpu_to_le32(data_block->blknum);
 #ifdef QTREE_DEBUG
 			printk(KERN_DEBUG "ref[%d] = %d\n",
