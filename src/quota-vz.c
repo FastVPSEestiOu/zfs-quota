@@ -3,18 +3,25 @@
 #include <linux/virtinfo.h>
 #include <linux/ve_proto.h>
 
+#include "quota.h"
+
 static int zfsquota_notifier_call(struct vnotifier_block *self,
 				  unsigned long n, void *data, int err)
 {
 	struct virt_info_quota *viq = (struct virt_info_quota *)data;
+	int status = 0;
 
 	switch (n) {
 	case VIRTINFO_QUOTA_ON:
-		err = zfsquota_notify_quota_on(viq->super);
+		status = zfsquota_setup_quota(viq->super);
 		break;
 	case VIRTINFO_QUOTA_OFF:
-		err = zfsquota_notify_quota_off(viq->super);
+		status = zfsquota_teardown_quota(viq->super);
 		break;
+	}
+	if (status) {
+		printk("ZFSQUOTA: Action %lu returned %d\n", n, status);
+		err = NOTIFY_BAD;
 	}
 	return err;
 }

@@ -31,11 +31,6 @@ int zqproc_reg_get_sb_type(struct inode *inode, struct super_block **psb,
 			   int *ptype)
 #endif /* #ifndef #else CONFIG_VE */
 {
-#ifdef CONFIG_VE
-	if (zfs_aquot_inode_masked(inode->i_ino))
-		return zqproc_ve_get_sb_type(inode, psb, ptype);
-#endif
-
 	if (psb)
 		*psb = (struct super_block *)proc_get_parent_data(inode);
 	if (ptype)

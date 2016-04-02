@@ -118,6 +118,7 @@ static void copy_from_if_dqblk(struct qc_dqblk *dst, struct if_dqblk *src)
 #	define quota_struct	qc_dqblk
 #endif /* HAVE_QUOTA_KQID_QC_DQBLK */
 
+#if defined(HAVE_QUOTA_KQID_QC_DQBLK) || defined(HAVE_QUOTA_KQID_FDQ)
 static int get_qid_type(struct kqid kqid, qid_t *pqid, int *ptype)
 {
 	if (!pqid || !ptype)
@@ -139,7 +140,6 @@ static int get_qid_type(struct kqid kqid, qid_t *pqid, int *ptype)
 	return 0;
 }
 
-#if defined(HAVE_QUOTA_KQID_QC_DQBLK) || defined(HAVE_QUOTA_KQID_FDQ)
 static int zfsquota_get_quota_struct(struct super_block *sb, struct kqid kqid,
 		       struct quota_struct *fdq)
 {
@@ -236,19 +236,23 @@ struct quota_format_type zfs_quota_empty_vfsv2_format = {
 	.qf_owner = THIS_MODULE,
 };
 
-int zfsquota_notify_quota_on(struct super_block *sb)
+int zfsquota_setup_quota(struct super_block *sb)
 {
 	const char *fsname;
+	int err = 0;
+
 #ifdef CONFIG_VE
 	fsname = sb->s_op->get_quota_root(sb)->i_sb->s_type->name;
 #else /* #ifdef CONFIG_VE */
 	fsname = sb->s_root->d_inode->i_sb->s_type->name;
 #endif /* #else #ifdef CONFIG_VE */
+
 	if (strcmp(fsname, "zfs")) {
-		return NOTIFY_OK;
+		return -ENOSYS;
 	}
+
 	if (!try_module_get(THIS_MODULE))
-		return NOTIFY_BAD;
+		return -ENOSYS;
 
 	sb->s_qcop = &zfsquota_q_cops;
 	sb->s_dquot.flags = dquot_state_flag(DQUOT_USAGE_ENABLED, USRQUOTA) |
@@ -262,24 +266,25 @@ int zfsquota_notify_quota_on(struct super_block *sb)
 	sb->s_dquot.info[GRPQUOTA].dqi_format = &zfs_quota_empty_vfsv2_format;
 #endif
 
-	if (zqtree_init_superblock(sb))
-		return NOTIFY_BAD;
+	err = zqtree_init_superblock(sb);
+	if (err)
+		module_put(THIS_MODULE);
 
-	return NOTIFY_OK;
+	return err;
 }
-EXPORT_SYMBOL(zfsquota_notify_quota_on);
+EXPORT_SYMBOL(zfsquota_setup_quota);
 
-int zfsquota_notify_quota_off(struct super_block *sb)
+int zfsquota_teardown_quota(struct super_block *sb)
 {
 	if (sb->s_qcop != &zfsquota_q_cops) {
-		return NOTIFY_OK;
+		return 0;
 	}
 	zqtree_free_superblock(sb);
 	module_put(THIS_MODULE);
 
-	return NOTIFY_OK;
+	return 0;
 }
-EXPORT_SYMBOL(zfsquota_notify_quota_off);
+EXPORT_SYMBOL(zfsquota_teardown_quota);
 
 int __init zfsquota_proc_init(void);
 void __exit zfsquota_proc_exit(void);
@@ -294,7 +299,7 @@ static int __init zfsquota_init(void)
 	zfsquota_tree_init();
 
 #ifdef CONFIG_VE
-	zfsquota_vz_exit();
+	zfsquota_vz_init();
 #endif /* #ifdef CONFIG_VE */
 
 #ifdef USE_VFSOLD_FORMAT

@@ -216,6 +216,8 @@ out:
 	return ERR_PTR(-ENOENT);
 }
 
+int zqproc_reg_get_sb_type(struct inode *inode, struct super_block **psb,
+			   int *ptype);
 int zqproc_get_sb_type(struct inode *inode, struct super_block **psb,
 		       int *ptype)
 {

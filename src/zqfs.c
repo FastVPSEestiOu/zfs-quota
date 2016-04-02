@@ -44,6 +44,8 @@
 #include <asm/unistd.h>
 #include <asm/uaccess.h>
 
+#include "quota.h"
+
 #define ZQFS_GET_LOWER_FS_SB(sb) sb->s_root->d_sb
 
 struct zqfs_fs_info {
@@ -134,19 +136,6 @@ static void zqfs_free_blkdev(struct super_block *sb)
 		sb->s_bdev->bd_part = NULL;
 		bdput(sb->s_bdev);
 	}
-}
-
-int zfsquota_notify_quota_on(struct super_block *sb);
-int zfsquota_notify_quota_off(struct super_block *sb);
-
-static void zqfs_quota_init(struct super_block *sb)
-{
-	(void) zfsquota_notify_quota_on(sb);
-}
-
-static void zqfs_quota_free(struct super_block *sb)
-{
-	(void) zfsquota_notify_quota_off(sb);
 }
 
 #ifdef CONFIG_VE
@@ -490,8 +479,7 @@ static int zqfs_fill_super(struct super_block *s, void *data, int silent)
 
 	path_put(&nd.path);
 
-	zqfs_quota_init(s);
-	return 0;
+	return zfsquota_setup_quota(s);
 
 out_path:
 	path_put(&nd.path);
@@ -519,7 +507,7 @@ static void zqfs_kill_sb(struct super_block *sb)
 
 	zqfs_free_export_op(sb);
 
-	zqfs_quota_free(sb);
+	zfsquota_teardown_quota(sb);
 	zqfs_free_blkdev(sb);
 
 	kill_anon_super(sb);
