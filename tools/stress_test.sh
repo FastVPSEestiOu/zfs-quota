@@ -25,13 +25,10 @@ create_one_ve() {
     echo -n Creating VEID=$VEID at ${PRIVATE}... >&2
     vzctl create $VEID --ostemplate debian-7.0-x86_64-minimal --layout simfs \
         --private $PRIVATE >&3 2>&3
-    vzctl set $VEID --save --quotaugidlimit 1000 >&3 2>&3
+    vzctl set $VEID --save --quotaugidlimit 1 >&3 2>&3
     cp $REPO/tools/qrandom.py $PRIVATE >&3 2>&3
     sed -e \
-"/exit 0/i rm -f /aquota.* \n\
-ln -fs /proc/vz/zfsquota/*/aquota.user / \n\
-ln -fs /proc/vz/zfsquota/*/aquota.group / \n\
-python /qrandom.py /stage $ACTIONS_PER_RUN > /log 2>&1 & \
+"/exit 0/i python /qrandom.py /stage $ACTIONS_PER_RUN > /log 2>&1 & \
 echo \$! > /pid" \
         -i $PRIVATE/etc/rc.local
     echo done >&2
