@@ -117,7 +117,7 @@ system call. Create it. First examine the ZQFS root:
 
 ```shell
 # stat /mnt/zqfs
-  File: ‘/mnt/zqfs’
+  File: "/mnt/zqfs"
   Size: 14            Blocks: 3          IO Block: 1024   directory
 Device: 25h/37d Inode: 4           Links: 3
 Access: (0755/drwxr-xr-x)  Uid: (    0/    root)   Gid: (    0/    root)
@@ -149,3 +149,26 @@ repquota /mnt/zqfs
 ```
 
 Writing an external mount utility is to be done.
+
+Implementation
+--------------
+
+1. Filesystems superblocks are registered via `zfsquota_init_superblock` and
+   deregistered by `zfsquota_free_superblock`. These are called by the notify
+   mechanism of the OpenVZ for the `simfs` and dirctly from the `zqfs`.
+   This is due to `simfs` uses `s_fs_info` and frees `s_root` before calling
+   to us, making us unable to.  These are put into `radix_tree` keyed by
+   superblock pointer, a better data structure should be used such as a
+   hashtable.
+1. Structure `struct zqhandle` holds all the necessary data to work with ZFS:
+   a superblock reference, ZFS handle (ZFS' superblock `s_fs_info`), refcnt
+   and a MAXQUOTA of `quota_tree`s. All the structures are kept in the
+   `radix_tree` and protected by its mutex `zqhandle_tree_mutex` as well.
+   Reference counting is used to keep an eye on the `struct zqhandle` and
+   `quota_tree`s usage: use `zqhandle_get` to get handle struct for a given
+   superblock and `zqhandle_put` to put it.
+1. Structure `struct quota_tree` represents a quota tree for a given quota
+   type. It consists of a `radix_tree` keyed with quota IDs (user or group IDs)
+   and with `struct quota_data` values, both are `version`ised to remove stale
+   entries. Quota tree is protected by a mutex.
+1. 
