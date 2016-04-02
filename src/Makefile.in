@@ -4,7 +4,8 @@ zfs-quota-y := quota.o tree.o zfs.o radix-tree-iter.o proc-vfsold.o proc-vfsv2.o
 zfs-quota-y += proc.o
 ifneq ($(KERNELVERSION),)
  ifeq ($(CONFIG_VE),y)
-zfs-quota-y += proc-ve.o
+zfs-quota-y += proc-vz.o
+zfs-quota-y += quota-vz.o
  endif
 endif
 ccflags-y := -include $(SUBDIRS)/../zfs-quota-config.h

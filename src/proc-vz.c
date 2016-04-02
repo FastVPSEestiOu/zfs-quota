@@ -23,6 +23,29 @@ static struct proc_dir_entry *glob_zfsquota_proc;
 
 extern struct quotactl_ops zfsquota_q_cops;
 
+
+#define INO_MASK	0xec000000UL
+static inline int zfs_aquot_inode_masked(unsigned long i_ino)
+{
+	return ((i_ino) & INO_MASK) == INO_MASK;
+}
+
+static inline unsigned long zfs_aquot_getino(dev_t dev, int type)
+{
+	return INO_MASK | (dev << 8) | (type & 0xFF);
+}
+
+static inline dev_t zfs_aquot_getdev(unsigned long i_ino)
+{
+	return (INO_MASK ^ i_ino) >> 8;
+}
+
+static inline int zfs_aquot_type(unsigned long i_ino)
+{
+	return i_ino & 0xFF;
+}
+
+
 /* ----------------------------------------------------------------------
  *
  * /proc/vz/vzaquota/QID/aquota.* files
@@ -193,12 +216,15 @@ out:
 	return ERR_PTR(-ENOENT);
 }
 
-int zqproc_ve_get_sb_type(struct inode *inode, struct super_block **psb,
+int zqproc_get_sb_type(struct inode *inode, struct super_block **psb,
 		       int *ptype)
 {
 	int err, type;
 	struct block_device *bdev;
 	struct super_block *sb;
+
+	if (!zfs_aquot_inode_masked(inode->i_ino))
+		return zqproc_reg_get_sb_type(inode, psb, ptype);
 
 	err = -ENODEV;
 	bdev = bdget(zfs_aquot_getdev(inode->i_ino));
@@ -510,7 +536,7 @@ static struct inode_operations zfs_aquotd_inode_operations = {
 	.getattr = &zfs_aquotd_getattr,
 };
 
-int __init zfsquota_proc_ve_init(void)
+int __init zfsquota_proc_vz_init(void)
 {
 	glob_zfsquota_proc =
 	    create_proc_entry("vzaquota", S_IFDIR | S_IRUSR | S_IXUSR,
@@ -522,7 +548,7 @@ int __init zfsquota_proc_ve_init(void)
 	return 0;
 }
 
-void __exit zfsquota_proc_ve_exit(void)
+void __exit zfsquota_proc_vz_exit(void)
 {
 	remove_proc_entry("vzaquota", glob_proc_vz_dir);
 }

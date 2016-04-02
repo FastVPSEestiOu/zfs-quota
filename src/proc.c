@@ -23,8 +23,13 @@ void *proc_get_parent_data(const struct inode *inode);
 struct proc_dir_entry *proc_mkdir_data(const char *name, umode_t mode,
 		struct proc_dir_entry *parent, void *data);
 
+#ifndef CONFIG_VE
 int zqproc_get_sb_type(struct inode *inode, struct super_block **psb,
 		       int *ptype)
+#else /* #ifndef CONFIG_VE */
+int zqproc_reg_get_sb_type(struct inode *inode, struct super_block **psb,
+			   int *ptype)
+#endif /* #ifndef #else CONFIG_VE */
 {
 #ifdef CONFIG_VE
 	if (zfs_aquot_inode_masked(inode->i_ino))

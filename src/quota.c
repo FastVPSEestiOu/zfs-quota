@@ -2,19 +2,8 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 
-#ifdef QUOTA_KQID
-#	include <linux/uidgid.h>
-#	include <linux/projid.h>
-#endif /* #ifdef QUOTA_KQID */
-
-#ifdef CONFIG_VE
-#	include <linux/vzquota.h>
-#	include <linux/virtinfo.h>
-#	include <linux/ve_proto.h>
-#else /* #ifdef CONFIG_VE */
-#	include <linux/fs.h>
-#	include <linux/quota.h>
-#endif /* #else #ifdef CONFIG_VE */
+#include <linux/fs.h>
+#include <linux/quota.h>
 
 #include "tree.h"
 
@@ -292,35 +281,12 @@ int zfsquota_notify_quota_off(struct super_block *sb)
 }
 EXPORT_SYMBOL(zfsquota_notify_quota_off);
 
-#ifdef CONFIG_VE
-static int zfsquota_notifier_call(struct vnotifier_block *self,
-				  unsigned long n, void *data, int err)
-{
-	struct virt_info_quota *viq = (struct virt_info_quota *)data;
-
-	switch (n) {
-	case VIRTINFO_QUOTA_ON:
-		err = zfsquota_notify_quota_on(viq->super);
-		break;
-	case VIRTINFO_QUOTA_OFF:
-		err = zfsquota_notify_quota_off(viq->super);
-		break;
-	}
-	return err;
-}
-
-struct vnotifier_block zfsquota_notifier_block = {
-	.notifier_call = zfsquota_notifier_call,
-	.priority = INT_MAX / 2
-};
-#endif /* #ifdef CONFIG_VE */
-
 int __init zfsquota_proc_init(void);
 void __exit zfsquota_proc_exit(void);
-int __init zfsquota_proc_ve_init(void);
-void __exit zfsquota_proc_ve_exit(void);
 int __init zfsquota_tree_init(void);
 int __init zfsquota_tree_exit(void);
+int __init zfsquota_vz_init(void);
+int __init zfsquota_vz_exit(void);
 
 static int __init zfsquota_init(void)
 {
@@ -328,11 +294,14 @@ static int __init zfsquota_init(void)
 	zfsquota_tree_init();
 
 #ifdef CONFIG_VE
-	zfsquota_proc_ve_init();
-	virtinfo_notifier_register(VITYPE_QUOTA, &zfsquota_notifier_block);
+	zfsquota_vz_exit();
 #endif /* #ifdef CONFIG_VE */
 
+#ifdef USE_VFSOLD_FORMAT
 	register_quota_format(&zfs_quota_empty_vfsold_format);
+#else
+	register_quota_format(&zfs_quota_empty_vfsv2_format);
+#endif
 	return 0;
 }
 
@@ -342,11 +311,14 @@ static void __exit zfsquota_exit(void)
 	zfsquota_tree_exit();
 
 #ifdef CONFIG_VE
-	zfsquota_proc_ve_exit();
-	virtinfo_notifier_unregister(VITYPE_QUOTA, &zfsquota_notifier_block);
+	zfsquota_vz_exit();
 #endif /* #ifdef CONFIG_VE */
 
+#ifdef USE_VFSOLD_FORMAT
 	unregister_quota_format(&zfs_quota_empty_vfsold_format);
+#else
+	unregister_quota_format(&zfs_quota_empty_vfsv2_format);
+#endif
 
 	return;
 }
