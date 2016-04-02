@@ -460,7 +460,7 @@ static ssize_t zfs_aquotf_vfsv2r1_read(struct file *file,
 
 	err = -ENOMEM;
 	page = (char *)__get_free_page(GFP_KERNEL);
-	if (page == NULL)
+	if (!page)
 		goto out_err;
 
 	copied = 0;
@@ -496,8 +496,6 @@ static ssize_t zfs_aquotf_vfsv2r1_read(struct file *file,
 		return l;
 
 out_err:
-	if (page != NULL)
-		free_page((unsigned long)page);
 	return err;
 }
 
