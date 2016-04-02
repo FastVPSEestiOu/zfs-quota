@@ -334,7 +334,7 @@ static inline uint64_t min_except_zero(uint64_t a, uint64_t b)
 int zqtree_set_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
 {
 	struct zqhandle *handle = zqhandle_get(sb);
-	int ret;
+	int ret = 0;
 	uint64_t limit;
 
 	if (!handle)
