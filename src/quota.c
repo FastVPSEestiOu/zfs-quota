@@ -32,7 +32,7 @@ static int zfsquota_set_dqblk(struct super_block *sb, int type,
 	return zqtree_set_quota_dqblk(sb, type, id, di);
 }
 
-#ifdef QUOTA_KQID
+#ifdef HAVE_QUOTA_KQID_FDQ
 static void copy_to_if_dqblk(struct if_dqblk *dst, struct fs_disk_quota *src)
 {
 	dst->dqb_bhardlimit = src->d_blk_hardlimit;
@@ -72,6 +72,63 @@ static void copy_from_if_dqblk(struct fs_disk_quota *dst, struct if_dqblk *src)
 		dst->d_fieldmask |= FS_DQ_ITIMER;
 }
 
+#	define	quota_struct	fs_disk_quota
+#endif /* HAVE_QUOTA_KQID_FDQ */
+
+#ifdef HAVE_QUOTA_KQID_QC_DQBLK
+static inline qsize_t qbtos(qsize_t blocks)
+{
+	return blocks << QIF_DQBLKSIZE_BITS;
+}
+
+static inline qsize_t stoqb(qsize_t space)
+{
+	return (space + QIF_DQBLKSIZE - 1) >> QIF_DQBLKSIZE_BITS;
+}
+
+static void copy_to_if_dqblk(struct if_dqblk *dst, struct qc_dqblk *src)
+{
+	memset(dst, 0, sizeof(*dst));
+	dst->dqb_bhardlimit = stoqb(src->d_spc_hardlimit);
+	dst->dqb_bsoftlimit = stoqb(src->d_spc_softlimit);
+	dst->dqb_curspace = src->d_space;
+	dst->dqb_ihardlimit = src->d_ino_hardlimit;
+	dst->dqb_isoftlimit = src->d_ino_softlimit;
+	dst->dqb_curinodes = src->d_ino_count;
+	dst->dqb_btime = src->d_spc_timer;
+	dst->dqb_itime = src->d_ino_timer;
+	dst->dqb_valid = QIF_ALL;
+}
+
+static void copy_from_if_dqblk(struct qc_dqblk *dst, struct if_dqblk *src)
+{
+	dst->d_spc_hardlimit = qbtos(src->dqb_bhardlimit);
+	dst->d_spc_softlimit = qbtos(src->dqb_bsoftlimit);
+	dst->d_space = src->dqb_curspace;
+	dst->d_ino_hardlimit = src->dqb_ihardlimit;
+	dst->d_ino_softlimit = src->dqb_isoftlimit;
+	dst->d_ino_count = src->dqb_curinodes;
+	dst->d_spc_timer = src->dqb_btime;
+	dst->d_ino_timer = src->dqb_itime;
+
+	dst->d_fieldmask = 0;
+	if (src->dqb_valid & QIF_BLIMITS)
+		dst->d_fieldmask |= QC_SPC_SOFT | QC_SPC_HARD;
+	if (src->dqb_valid & QIF_SPACE)
+		dst->d_fieldmask |= QC_SPACE;
+	if (src->dqb_valid & QIF_ILIMITS)
+		dst->d_fieldmask |= QC_INO_SOFT | QC_INO_HARD;
+	if (src->dqb_valid & QIF_INODES)
+		dst->d_fieldmask |= QC_INO_COUNT;
+	if (src->dqb_valid & QIF_BTIME)
+		dst->d_fieldmask |= QC_SPC_TIMER;
+	if (src->dqb_valid & QIF_ITIME)
+		dst->d_fieldmask |= QC_INO_TIMER;
+}
+
+#	define quota_struct	qc_dqblk
+#endif /* HAVE_QUOTA_KQID_QC_DQBLK */
+
 static int get_qid_type(struct kqid kqid, qid_t *pqid, int *ptype)
 {
 	if (!pqid || !ptype)
@@ -93,8 +150,9 @@ static int get_qid_type(struct kqid kqid, qid_t *pqid, int *ptype)
 	return 0;
 }
 
-static int zfsquota_get_fdq(struct super_block *sb, struct kqid kqid,
-		       struct fs_disk_quota *fdq)
+#if defined(HAVE_QUOTA_KQID_QC_DQBLK) || defined(HAVE_QUOTA_KQID_FDQ)
+static int zfsquota_get_quota_struct(struct super_block *sb, struct kqid kqid,
+		       struct quota_struct *fdq)
 {
 	qid_t qid;
 	int type, ret;
@@ -112,8 +170,8 @@ static int zfsquota_get_fdq(struct super_block *sb, struct kqid kqid,
 	return ret;
 }
 
-static int zfsquota_set_fdq(struct super_block *sb, struct kqid kqid,
-		       struct fs_disk_quota *fdq)
+static int zfsquota_set_quota_struct(struct super_block *sb, struct kqid kqid,
+		       struct quota_struct *fdq)
 {
 	qid_t qid;
 	int type, ret;
@@ -128,7 +186,7 @@ static int zfsquota_set_fdq(struct super_block *sb, struct kqid kqid,
 	ret = zfsquota_set_dqblk(sb, type, qid, &dqblk);
 	return ret;
 }
-#endif /* QUOTA_KQID */
+#endif /* defined(HAVE_QUOTA_KQID_QC_DQBLK) || defined(HAVE_QUOTA_KQID_FDQ) */
 
 static int zfsquota_get_info(struct super_block *sb, int type,
 			     struct if_dqinfo *ii)
@@ -165,13 +223,13 @@ struct quotactl_ops zfsquota_q_cops = {
 	.quota_sync = zfsquota_sync,
 	.get_info = zfsquota_get_info,
 	.set_info = zfsquota_set_info,
-#ifdef QUOTA_KQID
-	.get_dqblk = zfsquota_get_fdq,
-	.set_dqblk = zfsquota_set_fdq,
-#else /* #ifdef QUOTA_KQID */
+#if defined(HAVE_QUOTA_KQID_QC_DQBLK) || defined(HAVE_QUOTA_KQID_FDQ)
+	.get_dqblk = zfsquota_get_quota_struct,
+	.set_dqblk = zfsquota_set_quota_struct,
+#else
 	.get_dqblk = zfsquota_get_dqblk,
 	.set_dqblk = zfsquota_set_dqblk,
-#endif /* #else #ifdef QUOTA_KQID */
+#endif
 #ifdef CONFIG_QUOTA_COMPAT
 	.get_quoti = zfsquota_get_quoti,
 #endif
