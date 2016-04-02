@@ -96,12 +96,10 @@ out_err:
 static int zfs_aquotf_vfsold_release(struct inode *inode, struct file *file)
 {
 	struct quota_tree *quota_tree;
-	int type;
 
-	type = zfs_aquot_type(inode->i_ino) - 1;
 	quota_tree = file->private_data;
 	file->private_data = NULL;
-	zqtree_put_quota_tree(quota_tree, type);
+	zqtree_put_quota_tree(quota_tree);
 
 	return 0;
 }

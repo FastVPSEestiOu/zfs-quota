@@ -21,6 +21,7 @@ struct quota_tree {
 	struct radix_tree_root radix;
 	struct mutex mutex;
 	uint32_t version;
+	const unsigned int type;
 };
 
 struct zqhandle {
@@ -65,6 +66,7 @@ int zqtree_init_superblock(struct super_block *sb)
 
 	for (i = 0; i < MAXQUOTAS; ++i) {
 		mutex_init(&data->quota[i].mutex);
+		*(unsigned int*)&data->quota[i].type = i;
 		data->quota[i].version = 1;
 	}
 
@@ -168,12 +170,15 @@ struct quota_tree *zqhandle_get_tree(struct zqhandle *handle, int type)
 	return &handle->quota[type];
 }
 
-/* TODO use container_of instead, for that keep tree type in the quota_tree
- * struct */
-static void zqhandle_put_tree(struct zqhandle *handle, struct quota_tree *qt)
+static void zqhandle_put_tree(struct quota_tree *qt)
 {
-	if (qt)
-		zqhandle_put(handle);
+	struct zqhandle *handle;
+
+	if (!qt)
+		return;
+
+	handle = container_of(qt, struct zqhandle, quota[qt->type]);
+	zqhandle_put(handle);
 }
 
 /* must be called with quota_tree->mutex taken */
@@ -220,7 +225,7 @@ struct quota_data *zqtree_get_quota_data_type(struct zqhandle *handle,
 	quota_data = zqtree_get_quota_data(quota_tree, id);
 	mutex_unlock(&quota_tree->mutex);
 
-	zqhandle_put_tree(handle, quota_tree);
+	zqhandle_put_tree(quota_tree);
 
 	return quota_data;
 }
@@ -287,7 +292,7 @@ int zqtree_print_tree_sb_type(void *sb, int type)
 	if (quota_tree)
 		ret = zqtree_print_tree(quota_tree);
 
-	zqhandle_put_tree(handle, quota_tree);
+	zqhandle_put_tree(quota_tree);
 	zqhandle_put(handle);
 
 	return ret;
@@ -463,20 +468,16 @@ struct quota_tree *zqtree_get_sync_quota_tree(void *sb, int type)
 
 out:
 	if (ret && ret != EOPNOTSUPP) {
-		zqhandle_put_tree(handle, quota_tree);
+		zqhandle_put_tree(quota_tree);
 		quota_tree = NULL;
 	}
 	zqhandle_put(handle);
 	return quota_tree;
 }
 
-void zqtree_put_quota_tree(struct quota_tree *quota_tree, int type)
+void zqtree_put_quota_tree(struct quota_tree *quota_tree)
 {
-	struct zqhandle *handle = container_of(quota_tree,
-					       struct zqhandle,
-					       quota[type]);
-
-	zqhandle_put_tree(handle, quota_tree);
+	return zqhandle_put_tree(quota_tree);
 }
 
 void zqtree_zfs_sync_tree(void *sb, int type)
@@ -485,7 +486,7 @@ void zqtree_zfs_sync_tree(void *sb, int type)
 
 	quota_tree = zqtree_get_sync_quota_tree(sb, type);
 	if (quota_tree)
-		zqtree_put_quota_tree(quota_tree, type);
+		zqtree_put_quota_tree(quota_tree);
 }
 
 void quota_tree_iter_start(

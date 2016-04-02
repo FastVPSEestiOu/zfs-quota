@@ -410,7 +410,7 @@ static int zfs_aquotf_vfsv2r1_open(struct inode *inode, struct file *file)
 
 	quota_tree = zqtree_get_sync_quota_tree(sb, type);
 	root = qtree_build(type, quota_tree);
-	zqtree_put_quota_tree(quota_tree, type);
+	zqtree_put_quota_tree(quota_tree);
 
 	file->private_data = root;
 

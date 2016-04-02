@@ -26,7 +26,7 @@ int zqtree_free_superblock(struct super_block *sb);
 struct quota_tree *zqtree_get_sync_quota_tree(void *sb, int type);
 
 /* Put zqtree */
-void zqtree_put_quota_tree(struct quota_tree *quota_tree, int type);
+void zqtree_put_quota_tree(struct quota_tree *quota_tree);
 
 /* Sync zqtree for superblock and type */
 void zqtree_zfs_sync_tree(void *sb, int type);
