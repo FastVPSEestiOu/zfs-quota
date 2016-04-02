@@ -69,21 +69,10 @@ static int quota_data_to_v2r1_disk_dqblk(struct quota_data *quota_data,
 }
 
 
-//#define QTREE_DEBUG
+/* #define QTREE_DEBUG */
 
-/* TODO (Pavel Boldin) basically this code converts qid_t keyed radix tree
- * into blknum-keyed radix tree. A better data structure that keeps both
- * trees simultaneously should be used instead. This structure code is to be
- * copied from the radix tree with bits per level = 8 (???)
- */
 struct qtree_block;
 
-/* FIXME this qtree is rather space-consuming since it allocates new 
- * data block for each leaf
- *
- * To fix this introduce make depth == 3 blocks reference
- * data blocks indirectly by number. (union qtree_leaf's qd with blknum)
- */
 struct qtree_block {
 	uint32_t blknum;
 	uint32_t depth, num;
