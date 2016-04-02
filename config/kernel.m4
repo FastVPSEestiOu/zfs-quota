@@ -1,7 +1,7 @@
 dnl #
 dnl # Detect the kernel to be built against
 dnl #
-AC_DEFUN([ZFS_AC_KERNEL], [
+AC_DEFUN([ZFSQUOTA_AC_KERNEL], [
 	AC_ARG_WITH([linux],
 		AS_HELP_STRING([--with-linux=PATH],
 		[Path to kernel source]),
@@ -237,7 +237,7 @@ AC_DEFUN([ZFSQUOTA_AC_ZFS], [
 dnl #
 dnl # Detect the SPL module to be built against
 dnl #
-AC_DEFUN([ZFS_AC_SPL], [
+AC_DEFUN([ZFSQUOTA_AC_SPL], [
 	AC_ARG_WITH([spl],
 		AS_HELP_STRING([--with-spl=PATH],
 		[Path to spl source]),

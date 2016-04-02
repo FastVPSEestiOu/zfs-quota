@@ -62,9 +62,9 @@ AC_DEFUN([ZFS_LINUX_TRY_COMPILE],
 ])
 
 dnl #
-dnl # ZFS_AC_OBJECT_QUOTA checks if object quota is enabled
+dnl # AC_ZFS_HAVE_OBJECT_QUOTA checks if object quota is enabled
 dnl #
-AC_DEFUN([ZFS_AC_OBJECT_QUOTA],	[
+AC_DEFUN([AC_ZFS_HAVE_OBJECT_QUOTA],	[
 	AC_MSG_CHECKING([whether ZFS has object quota support])
 	tmp_flags="$EXTRA_KCFLAGS"
 	EXTRA_KCFLAGS="-I$SPL/include -I$SPL_OBJ -I$ZFS/include -I$ZFS_OBJ"
@@ -79,7 +79,8 @@ AC_DEFUN([ZFS_AC_OBJECT_QUOTA],	[
 		(void) t;
 	],[
 		AC_MSG_RESULT([yes])
-		AC_DEFINE(HAVE_OBJECT_QUOTA, 1, [Define if ZFS has object quota])
+		AC_DEFINE(HAVE_ZFS_OBJECT_QUOTA, 1,
+			  [Define if ZFS has object quota])
 	],[
 		AC_MSG_RESULT([no])
 	])
