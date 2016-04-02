@@ -53,76 +53,6 @@ struct zqfs_fs_info {
 
 static struct super_operations zqfs_super_ops;
 
-#ifdef CONFIG_VE
-static void quota_get_stat(struct inode *ino, struct kstatfs *buf)
-{
-	int err;
-	struct dq_kstat qstat;
-	struct virt_info_quota q;
-	long free_file, adj_file;
-	s64 blk, free_blk, adj_blk;
-	int bsize_bits;
-
-	q.inode = ino;
-	q.qstat = &qstat;
-	err = virtinfo_notifier_call(VITYPE_QUOTA, VIRTINFO_QUOTA_GETSTAT, &q);
-	if (err != NOTIFY_OK)
-		return;
-
-	bsize_bits = ffs(buf->f_bsize) - 1;
-	
-	if (qstat.bsoftlimit > qstat.bcurrent)
-		free_blk = (qstat.bsoftlimit - qstat.bcurrent) >> bsize_bits;
-	else
-		free_blk = 0;
-	/*
-	 * In the regular case, we always set buf->f_bfree and buf->f_blocks to
-	 * the values reported by quota.  In case of real disk space shortage,
-	 * we adjust the values.  We want this adjustment to look as if the
-	 * total disk space were reduced, not as if the usage were increased.
-	 *    -- SAW
-	 */
-	adj_blk = 0;
-	if (buf->f_bfree < free_blk)
-		adj_blk = free_blk - buf->f_bfree;
-	buf->f_bfree = free_blk - adj_blk;
-
-	if (free_blk < buf->f_bavail)
-		buf->f_bavail = free_blk;
-
-	blk = (qstat.bsoftlimit >> bsize_bits) - adj_blk;
-	buf->f_blocks = blk > LONG_MAX ? LONG_MAX : blk;
-
-
-	free_file = 0;
-	if (qstat.icurrent < qstat.isoftlimit)
-		free_file = qstat.isoftlimit - qstat.icurrent;
-
-	if (buf->f_type == REISERFS_SUPER_MAGIC)
-		/*
-		 * reiserfs doesn't initialize f_ffree and f_files values of
-		 * kstatfs because it doesn't have an inode limit.
-		 */
-		buf->f_ffree = free_file;
-	adj_file = 0;
-	if (buf->f_ffree < free_file)
-		adj_file = free_file - buf->f_ffree;
-	buf->f_ffree = free_file - adj_file;
-	buf->f_files = qstat.isoftlimit - adj_file;
-}
-
-static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
-{
-	int err;
-
-	err = statfs_by_dentry(dentry, buf);
-	if (err)
-		return err;
-
-	quota_get_stat(dentry->d_inode, buf);
-	return 0;
-}
-#else /* #ifdef CONFIG_VE */
 static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
 	struct dentry *orig_dentry = dentry->d_fsdata;
@@ -138,7 +68,6 @@ static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 
 	return err;
 }
-#endif /* #else #ifdef CONFIG_VE */
 
 #ifdef CONFIG_VE
 static int zqfs_start_write(struct super_block *sb, int level, bool wait)
