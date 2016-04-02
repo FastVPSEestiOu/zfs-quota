@@ -14,10 +14,13 @@ ccflags-y += -I@ZFS@/include -I@ZFS_OBJ@
 modules:
 	@if [ -f @ZFS_OBJ@/Module.symvers ]; then \
 		/bin/cp @ZFS_OBJ@/Module.symvers .; \
+	elif [ -f @ZFS_OBJ@/module/Module.symvers ]; then \
+		/bin/cp @ZFS_OBJ@/module/Module.symvers .; \
 	else \
 		echo -e "\n" \
 		"*** Missing ZFS symbols ensure you have built the ZFS:\n" \
 		"*** - @ZFS_OBJ@/Module.symvers\n"; \
+		"*** - @ZFS_OBJ@/module/Module.symvers\n"; \
 		exit 1; \
 	fi
 	$(MAKE) -C @LINUX_OBJ@ SUBDIRS=`pwd` $@
