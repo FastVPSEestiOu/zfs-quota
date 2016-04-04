@@ -26,10 +26,10 @@ zfs_prop_list_t *zfs_get_prop_list(int quota_type);
 
 int zfs_set_space_quota(void *zfs_handle, int quota_type, qid_t id,
 			uint64_t limit);
-#ifdef HAVE_OBJECT_QUOTA
+#ifdef HAVE_ZFS_OBJECT_QUOTA
 int zfs_set_object_quota(void *zfs_handle, int quota_type, qid_t id,
 			 uint64_t limit);
-#endif /* HAVE_OBJECT_QUOTA */
+#endif /* HAVE_ZFS_OBJECT_QUOTA */
 
 void zfs_prop_iter_start(void *zfs_handle, int prop, zfs_prop_iter_t * iter);
 zfs_prop_pair_t *zfs_prop_iter_item(zfs_prop_iter_t * iter);

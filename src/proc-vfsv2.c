@@ -58,11 +58,11 @@ static int quota_data_to_v2r1_disk_dqblk(struct quota_data *quota_data,
 	v2r1->dqb_bsoftlimit = v2r1->dqb_bhardlimit =
 	    cpu_to_le64(quota_data->space_quota / 1024);
 	v2r1->dqb_curspace = cpu_to_le64(quota_data->space_used);
-#ifdef HAVE_OBJECT_QUOTA
+#ifdef HAVE_ZFS_OBJECT_QUOTA
 	v2r1->dqb_ihardlimit = v2r1->dqb_isoftlimit =
 	    cpu_to_le64(quota_data->obj_quota);
 	v2r1->dqb_curinodes = cpu_to_le64(quota_data->obj_used);
-#endif /* HAVE_OBJECT_QUOTA */
+#endif /* HAVE_ZFS_OBJECT_QUOTA */
 	v2r1->dqb_btime = v2r1->dqb_itime = cpu_to_le64(0);
 
 	return sizeof(*v2r1);
