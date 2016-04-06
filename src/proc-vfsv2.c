@@ -51,7 +51,7 @@ struct v2r1_disk_dqblk {
 	__le64 dqb_itime;	/* time limit for excessive inode use */
 };
 
-static int quota_data_to_v2r1_disk_dqblk(struct quota_data *quota_data,
+static int quota_data_to_v2r1_disk_dqblk(struct zqdata *quota_data,
 					 struct v2r1_disk_dqblk *v2r1)
 {
 	v2r1->dqb_id = cpu_to_le32(quota_data->qid);
@@ -84,7 +84,7 @@ struct qtree_block {
 };
 
 struct qtree_root {
-	struct quota_tree *quota_tree;
+	struct zqtree *quota_tree;
 	uint32_t blocks;
 	uint32_t data_per_block;
 	int type;
@@ -95,7 +95,7 @@ struct qtree_root {
 
 struct qtree_leaf {
 	struct list_head siblings;
-	struct quota_data *qd;
+	struct zqdata *qd;
 };
 
 #define QTREE_DEPTH     4
@@ -133,7 +133,7 @@ void fill_leafs(struct qtree_block *node_block,
 		struct qtree_root *tree_root)
 {
 	my_radix_tree_iter_t iter;
-	struct quota_data *qd;
+	struct zqdata *qd;
 	struct qtree_block *data_block = NULL;
 
 	for (quota_tree_iter_start
@@ -165,8 +165,8 @@ void fill_childs(struct qtree_block *node_block,
 	unsigned long child_shift = 8 * (QTREE_DEPTH - node_block->depth - 1);
 	unsigned long dchild = 1UL << child_shift;
 	int r;
-	struct quota_data *qd;
-	struct quota_tree *root = tree_root->quota_tree;
+	struct zqdata *qd;
+	struct zqtree *root = tree_root->quota_tree;
 
 	if (node_block->depth == QTREE_DEPTH - 1) {
 		fill_leafs(node_block, tree_root);
@@ -185,11 +185,6 @@ void fill_childs(struct qtree_block *node_block,
 			break;
 
 		qid = qd->qid;
-
-		if (!zqtree_check_qd_version(root, qd)) {
-			cur_key = qid + 1;
-			continue;
-		}
 
 		child = qtree_new_block(tree_root, qid & ~(dchild - 1),
 					node_block);
@@ -331,7 +326,7 @@ int qtree_output_block(char *buf, uint32_t blknum,
 	return 0;
 }
 
-struct qtree_root *qtree_build(int type, struct quota_tree *quota_tree)
+struct qtree_root *qtree_build(int type, struct zqtree *quota_tree)
 {
 	struct qtree_root *root;
 	int blocks = 1;		//, i;
@@ -401,7 +396,7 @@ static int zfs_aquotf_vfsv2r1_open(struct inode *inode, struct file *file)
 {
 	int err, type;
 	struct super_block *sb;
-	struct quota_tree *quota_tree;
+	struct zqtree *quota_tree;
 	struct qtree_root *root;
 
 	err = zqproc_get_sb_type(inode, &sb, &type);
@@ -410,7 +405,6 @@ static int zfs_aquotf_vfsv2r1_open(struct inode *inode, struct file *file)
 
 	quota_tree = zqtree_get_sync_quota_tree(sb, type);
 	root = qtree_build(type, quota_tree);
-	zqtree_put_quota_tree(quota_tree);
 
 	file->private_data = root;
 

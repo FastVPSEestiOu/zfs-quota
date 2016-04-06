@@ -200,11 +200,13 @@ static int zfsquota_get_quoti(struct super_block *sb, int type, qid_t idx,
 
 static int zfsquota_sync(struct super_block *sb, int type)
 {
+#if 0
 	if (type == -1) {
 		zqtree_zfs_sync_tree(sb, USRQUOTA);
 		zqtree_zfs_sync_tree(sb, GRPQUOTA);
 	} else
 		zqtree_zfs_sync_tree(sb, type);
+#endif
 	return 0;
 }
 
@@ -222,12 +224,6 @@ struct quotactl_ops zfsquota_q_cops = {
 #ifdef CONFIG_QUOTA_COMPAT
 	.get_quoti = zfsquota_get_quoti,
 #endif
-};
-
-struct quota_format_type zfs_quota_empty_vfsold_format = {
-	.qf_fmt_id = QFMT_VFS_OLD,
-	.qf_ops = NULL,
-	.qf_owner = THIS_MODULE,
 };
 
 struct quota_format_type zfs_quota_empty_vfsv2_format = {
@@ -258,15 +254,10 @@ int zfsquota_setup_quota(struct super_block *sb)
 	sb->s_dquot.flags = dquot_state_flag(DQUOT_USAGE_ENABLED, USRQUOTA) |
 	    dquot_state_flag(DQUOT_USAGE_ENABLED, GRPQUOTA);
 
-#ifdef USE_VFSOLD_FORMAT
-	sb->s_dquot.info[USRQUOTA].dqi_format = &zfs_quota_empty_vfsold_format;
-	sb->s_dquot.info[GRPQUOTA].dqi_format = &zfs_quota_empty_vfsold_format;
-#else
 	sb->s_dquot.info[USRQUOTA].dqi_format = &zfs_quota_empty_vfsv2_format;
 	sb->s_dquot.info[GRPQUOTA].dqi_format = &zfs_quota_empty_vfsv2_format;
-#endif
 
-	err = zqtree_init_superblock(sb);
+	err = zqhandle_register_superblock(sb);
 	if (err)
 		module_put(THIS_MODULE);
 
@@ -279,7 +270,7 @@ int zfsquota_teardown_quota(struct super_block *sb)
 	if (sb->s_qcop != &zfsquota_q_cops) {
 		return 0;
 	}
-	zqtree_free_superblock(sb);
+	zqhandle_unregister_superblock(sb);
 	module_put(THIS_MODULE);
 
 	return 0;
@@ -302,11 +293,7 @@ static int __init zfsquota_init(void)
 	zfsquota_vz_init();
 #endif /* #ifdef CONFIG_VE */
 
-#ifdef USE_VFSOLD_FORMAT
-	register_quota_format(&zfs_quota_empty_vfsold_format);
-#else
 	register_quota_format(&zfs_quota_empty_vfsv2_format);
-#endif
 	return 0;
 }
 
@@ -319,11 +306,7 @@ static void __exit zfsquota_exit(void)
 	zfsquota_vz_exit();
 #endif /* #ifdef CONFIG_VE */
 
-#ifdef USE_VFSOLD_FORMAT
-	unregister_quota_format(&zfs_quota_empty_vfsold_format);
-#else
 	unregister_quota_format(&zfs_quota_empty_vfsv2_format);
-#endif
 
 	return;
 }

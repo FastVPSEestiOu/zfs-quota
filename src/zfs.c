@@ -10,7 +10,7 @@
 #include "zfs.h"
 #include "tree.h"
 
-int zfsquota_fill_quotadata(void *zfs_handle, struct quota_data *quota_data,
+int zfsquota_fill_quotadata(void *zfs_handle, struct zqdata *quota_data,
 			    int type, qid_t id)
 {
 	int err;
@@ -61,7 +61,7 @@ no_obj_quota:
 	return 0;
 }
 
-#define QD_OFFSET(m) offsetof(struct quota_data, m)
+#define QD_OFFSET(m) offsetof(struct zqdata, m)
 
 zfs_prop_list_t *zfs_get_prop_list(int quota_type)
 {

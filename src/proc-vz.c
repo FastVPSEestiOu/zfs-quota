@@ -15,8 +15,6 @@
 
 #define DQBLOCK_SIZE 1024
 
-static const char quota_user[] = "quota.user";
-static const char quota_group[] = "quota.group";
 static const char aquota_user[] = "aquota.user";
 static const char aquota_group[] = "aquota.group";
 static struct proc_dir_entry *glob_zfsquota_proc;
@@ -82,18 +80,6 @@ static int zfs_aquotq_readdir(struct file *file, void *data, filldir_t filler)
 			err = (*filler) (data, "..", 2, n,
 					 parent_ino(file->f_dentry), DT_DIR);
 			break;
-		case 2:
-			err = (*filler) (data, quota_user,
-					 sizeof(quota_user) - 1, n,
-					 file->f_dentry->d_inode->i_ino
-					 + USRQUOTA + 1, DT_REG);
-			break;
-		case 3:
-			err = (*filler) (data, quota_group,
-					 sizeof(quota_group) - 1, n,
-					 file->f_dentry->d_inode->i_ino
-					 + GRPQUOTA + 1, DT_REG);
-			break;
 		case 4:
 			err = (*filler) (data, aquota_user,
 					 sizeof(aquota_user) - 1, n,
@@ -128,7 +114,6 @@ static int zfs_aquotq_looktest(struct inode *inode, void *data)
 	    zfs_aquot_type(inode->i_ino) == d->type + 1;
 }
 
-int zfs_aquotq_vfsold_lookset(struct inode *inode);
 int zfs_aquotq_vfsv2r1_lookset(struct inode *inode);
 
 static int zfs_aquotq_lookset(struct inode *inode, void *data)
@@ -143,12 +128,8 @@ static int zfs_aquotq_lookset(struct inode *inode, void *data)
 	inode->i_gid = 0;
 	inode->i_nlink = 1;
 	inode->i_op = &zfs_aquotf_inode_operations;
+	zfs_aquotq_vfsv2r1_lookset(inode);
 
-	if (d->fmt == QFMT_VFS_OLD) {
-		zfs_aquotq_vfsold_lookset(inode);
-	} else if (d->fmt == QFMT_VFS_V1) {
-		zfs_aquotq_vfsv2r1_lookset(inode);
-	}
 	return 0;
 }
 
