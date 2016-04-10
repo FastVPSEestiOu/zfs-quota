@@ -3,14 +3,16 @@
 set -e
 set -x
 
+VEID=${1:-1001}
+
 zpool import -a || :
 zfs mount -a || :
-vzctl stop 1001 || :
+vzctl stop $VEID || :
 rmmod zfs-quota || :
 insmod ./src/zfs-quota.ko
-vzctl start 1001
+vzctl start $VEID
 sleep 1
 #vzctl exec 1001 strace /quotactl_ex
-vzctl exec 1001 ls /proc/vz/vzaquota/ -R
-vzctl exec 1001 repquota -an
-vzctl exec 1001 repquota -agn
+vzctl exec $VEID ls /proc/vz/vzaquota/ -R
+vzctl exec $VEID repquota -an &>/dev/null
+#vzctl exec $VEID repquota -agn
