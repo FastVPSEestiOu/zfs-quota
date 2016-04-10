@@ -37,6 +37,8 @@ int zqtree_print_tree(struct zqtree *root);
 
 void zqtree_print_quota_data(struct zqdata *qd);
 
+void zqtree_put(struct zqtree *qt);
+
 
 #ifdef RADIX_TREE_ITER_H_INCLUDED
 /* Start my_radix_tree_iter for the quota_tree */

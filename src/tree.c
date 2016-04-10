@@ -11,7 +11,6 @@
 #include "tree.h"
 #include "zfs.h"
 
-
 /* Z(FS)Q(UOTA) part. All the handles are stored into radix-tree zqhandle_tree
  * with access protected by zqhandle_tree_mutex.
  */
@@ -78,6 +77,13 @@ out_free:
 void zqhandle_put(struct zqhandle *handle)
 {
 	if (atomic_dec_and_test(&handle->refcnt)) {
+		int i;
+		spin_lock(&handle->lock);
+		for (i = 0; i < MAXQUOTAS; i++) {
+			zqtree_put(handle->quota[i]);
+			handle->quota[i] = NULL;
+		}
+		spin_unlock(&handle->lock);
 		kfree(handle);
 	}
 }
@@ -125,9 +131,7 @@ out:
 	return handle;
 }
 
-
 static struct zqtree *zqtree_new(void);
-static void zqtree_put(struct zqtree *);
 static struct zqtree *zqtree_get(struct zqtree *);
 static int zqtree_young(struct zqtree *quota_tree);
 
@@ -294,7 +298,7 @@ static struct zqtree *zqtree_get(struct zqtree *qt)
 	return qt;
 }
 
-static void zqtree_put(struct zqtree *qt)
+void zqtree_put(struct zqtree *qt)
 {
 	if (!qt)
 		return;
