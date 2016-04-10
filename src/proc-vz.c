@@ -80,13 +80,13 @@ static int zfs_aquotq_readdir(struct file *file, void *data, filldir_t filler)
 			err = (*filler) (data, "..", 2, n,
 					 parent_ino(file->f_dentry), DT_DIR);
 			break;
-		case 4:
+		case 2:
 			err = (*filler) (data, aquota_user,
 					 sizeof(aquota_user) - 1, n,
 					 file->f_dentry->d_inode->i_ino
 					 + USRQUOTA + 10 + 1, DT_REG);
 			break;
-		case 5:
+		case 3:
 			err = (*filler) (data, aquota_group,
 					 sizeof(aquota_group) - 1, n,
 					 file->f_dentry->d_inode->i_ino
@@ -150,25 +150,12 @@ static struct dentry *zfs_aquotq_lookup(struct inode *dir,
 	struct zfs_aquotq_lookdata d;
 	int k, fmt;
 
-	if (dentry->d_name.len == sizeof(quota_user) - 1) {
-		if (memcmp(dentry->d_name.name, quota_user,
-			   sizeof(quota_user) - 1))
+	if (dentry->d_name.len == sizeof(aquota_user) - 1) {
+		if (memcmp(dentry->d_name.name, aquota_user,
+				   sizeof(aquota_user) - 1))
 			goto out;
 		k = USRQUOTA;
-		fmt = QFMT_VFS_OLD;
-	} else if (dentry->d_name.len == sizeof(quota_group) - 1 ||
-		   dentry->d_name.len == sizeof(aquota_user) - 1) {
-
-		if (!memcmp(dentry->d_name.name, quota_group,
-			    sizeof(quota_group) - 1)) {
-			k = GRPQUOTA;
-			fmt = QFMT_VFS_OLD;
-		} else if (!memcmp(dentry->d_name.name, aquota_user,
-				   sizeof(aquota_user) - 1)) {
-			k = USRQUOTA;
-			fmt = QFMT_VFS_V1;
-		} else
-			goto out;
+		fmt = QFMT_VFS_V1;
 	} else if (dentry->d_name.len == sizeof(aquota_group) - 1) {
 		if (memcmp(dentry->d_name.name, aquota_group,
 			   sizeof(aquota_group) - 1))
