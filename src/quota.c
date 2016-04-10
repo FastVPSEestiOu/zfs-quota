@@ -12,13 +12,13 @@ static int zfsquota_get_dqblk(struct super_block *sb, int type,
 {
 	memset(di, 0, sizeof(*di));
 
-	return zqtree_get_quota_dqblk(sb, type, id, di);
+	return zqhandle_get_quota_dqblk(sb, type, id, di);
 }
 
 static int zfsquota_set_dqblk(struct super_block *sb, int type,
 			      qid_t id, struct if_dqblk *di)
 {
-	return zqtree_set_quota_dqblk(sb, type, id, di);
+	return zqhandle_set_quota_dqblk(sb, type, id, di);
 }
 
 #ifdef HAVE_QUOTA_KQID_FDQ

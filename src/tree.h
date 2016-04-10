@@ -29,8 +29,8 @@ struct zqtree *zqtree_get_sync_quota_tree(void *sb, int type);
 void zqtree_put_quota_tree(struct zqtree *quota_tree);
 
 /* Get/set quota dqblk for given superblock, quota type and id */
-int zqtree_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di);
-int zqtree_set_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di);
+int zqhandle_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di);
+int zqhandle_set_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di);
 
 /* Printing utilities */
 int zqtree_print_tree(struct zqtree *root);

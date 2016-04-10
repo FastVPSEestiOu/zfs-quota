@@ -7,11 +7,11 @@
 #include <sys/types.h>
 #include <sys/zfs_vfsops.h>
 
-#include "zfs.h"
 #include "tree.h"
+#include "zfs.h"
 
-int zfsquota_fill_quotadata(void *zfs_handle, struct zqdata *quota_data,
-			    int type, qid_t id)
+int zfs_fill_quotadata(void *zfs_handle, struct zqdata *quota_data,
+		       int type, qid_t id)
 {
 	int err;
 	uint64_t rid = id;

@@ -4,6 +4,7 @@
 #include <linux/proc_fs.h>
 #include <linux/mount.h>
 #include <linux/slab.h>
+#include <linux/radix-tree.h>
 
 #include <linux/uaccess.h>
 #include <linux/ctype.h>
@@ -71,204 +72,263 @@ static int quota_data_to_v2r1_disk_dqblk(struct zqdata *quota_data,
 
 /* #define QTREE_DEBUG */
 
-struct qtree_block;
-
-struct qtree_block {
-	uint32_t blknum;
-	uint32_t depth, num;
-
-	struct qtree_block *parent;
-	struct list_head siblings;
-	struct list_head child;	/* if depth < 4, lists siblings
-				 * depth == 4, lists leafs */
-};
-
-struct qtree_root {
-	struct zqtree *quota_tree;
-	uint32_t blocks;
-	uint32_t data_per_block;
-	int type;
-	struct qtree_block root_block;
-
-	struct radix_tree_root blocks_tree;
-};
-
-struct qtree_leaf {
-	struct list_head siblings;
-	struct zqdata *qd;
-};
+#define	DATA_PER_BLOCK	\
+	((QTREE_BLOCKSIZE - sizeof(struct qt_disk_dqdbheader)) / \
+	 sizeof(struct v2r1_disk_dqblk))
 
 #define QTREE_DEPTH     4
 
-struct qtree_block *qtree_new_block(struct qtree_root *root,
-				    uint32_t num,
-				    struct qtree_block *parent)
+struct qtree_block {
+	uint32_t		blknum;
+	uint32_t		is_leaf:1;
+	uint32_t		offset:7;
+	uint32_t		num:24;
+	struct qtree_block	*next;
+	struct qtree_block	*child;
+};
+
+struct qtree_data_block {
+	uint32_t			blknum;
+	struct	qtree_data_block	*next;
+	uint32_t			qid_first;
+	uint32_t			qid_last;
+	uint32_t			n;
+	struct zqdata			*data[DATA_PER_BLOCK];
+};
+
+struct qtree_root {
+	uint32_t		type;
+	uint32_t		blknum;
+
+	struct qtree_block	first_block;
+
+	struct qtree_data_block *first_data_block;
+	struct qtree_data_block	*data_block;
+
+	struct radix_tree_root	blocks;
+};
+
+struct qtree_data_block *qtree_get_datablock(struct qtree_root *tree)
+{
+	struct qtree_data_block *data_block = tree->data_block;
+
+	if (!data_block || data_block->n == DATA_PER_BLOCK) {
+		data_block = kzalloc(sizeof(*data_block), GFP_KERNEL);
+		if (!data_block)
+			return NULL;
+
+		if (tree->data_block) {
+			tree->data_block->next = data_block;
+			tree->data_block = data_block;
+		} else {
+			tree->first_data_block = tree->data_block = data_block;
+		}
+	}
+
+	return data_block;
+}
+
+struct qtree_data_block *qtree_insert(struct qtree_root *tree, struct zqdata *qd)
+{
+	struct qtree_data_block *data_block;
+
+	data_block = qtree_get_datablock(tree);
+	if (!data_block)
+		return NULL;
+
+	data_block->data[data_block->n] = qd;
+	if (!data_block->n)
+		data_block->qid_first = qd->qid;
+	data_block->qid_last = qd->qid;
+	data_block->n++;
+
+	return data_block;
+}
+
+struct qtree_block *qtree_new_block(struct qtree_root *root, uint32_t num)
 {
 	struct qtree_block *block;
+	int err;
 
-	block = kzalloc(sizeof(*block), GFP_NOFS);
+	block = kzalloc(sizeof(*block), GFP_KERNEL);
 	if (!block)
 		return NULL;
 
-	block->blknum = ++root->blocks;
+
 	block->num = num;
-	block->depth = parent ? parent->depth + 1 : 0;
-	block->parent = parent;
-	INIT_LIST_HEAD(&block->child);
-	INIT_LIST_HEAD(&block->siblings);
-	if (parent)
-		list_add_tail(&block->siblings, &parent->child);
+	block->blknum  = root->blknum++;
 
-	radix_tree_insert(&root->blocks_tree, block->blknum, block);
+	err = radix_tree_insert(&root->blocks, block->blknum, block);
+	if (err)
+		goto out_err;
 
-#ifdef QTREE_DEBUG
-	printk(KERN_DEBUG "new blknum = %lu, depth = %lu, num = %lu\n",
-		block->blknum, block->depth, num);
-#endif
+	return block;
+out_err:
+	kfree(block);
+	return NULL;
+}
+
+static inline uint32_t qid_to_prefix(qid_t qid, int level)
+{
+	//uint32_t mask = (1 << (8 * (QTREE_DEPTH - level))) - 1;
+	return qid >> (8 * (QTREE_DEPTH - level));
+}
+
+static inline bool qid_prefix_equal(qid_t a, qid_t b, int level)
+{
+	return qid_to_prefix(a, level) == qid_to_prefix(b, level);
+}
+
+static inline int is_qid_in_block(struct qtree_block ***path, qid_t qid,
+			      int l)
+{
+	return path[l] && *path[l] &&
+		qid_prefix_equal(qid, (*path[l])->num, l);
+}
+
+struct qtree_block *qtree_get_pointer_block(struct qtree_block *block,
+		struct qtree_block ***path, struct qtree_root *root,
+		qid_t qid)
+{
+	int i;
+
+	if (block && qid_prefix_equal(block->num, qid, QTREE_DEPTH - 1))
+		return block;
+
+	/* Go up tree until block can contain qid */
+	for (i = QTREE_DEPTH - 1; !is_qid_in_block(path, qid, i); i--);
+
+	/* Now allocate new blocks */
+	for (i++; i <= QTREE_DEPTH - 1; i++) {
+		block = qtree_new_block(root, qid_to_prefix(qid, i));
+		*path[i] = block;
+		path[i] = &block->next;
+		if (i < QTREE_DEPTH - 1)
+			path[i + 1] = &block->child;
+	}
 
 	return block;
 }
 
-void fill_leafs(struct qtree_block *node_block,
-		struct qtree_root *tree_root)
+int qtree_enumerate_data_blocks(struct qtree_root *root)
 {
+	struct qtree_data_block *data_block;
+	int err = 0;
+	for (data_block = root->first_data_block;
+	     data_block; data_block = data_block->next)
+	{
+		data_block->blknum = root->blknum++;
+		err = radix_tree_insert(&root->blocks, data_block->blknum,
+					(void *)(1 | (unsigned long)data_block));
+		if (err)
+			break;
+	}
+
+	return err;
+}
+
+struct qtree_root *qtree_build(struct zqtree *zqtree, uint32_t type)
+{
+	struct qtree_block **path[QTREE_DEPTH] = {
+		[0 ... QTREE_DEPTH - 1]	= 0
+	};
+
+	struct qtree_root *root;
+	struct qtree_block *block = NULL;
+	struct qtree_data_block *data_block;
+	struct zqdata *qd;
 	my_radix_tree_iter_t iter;
-	struct zqdata *qd;
-	struct qtree_block *data_block = NULL;
 
-	for (quota_tree_iter_start
-	     (&iter, tree_root->quota_tree, node_block->num);
+	root = kzalloc(sizeof(*root), GFP_KERNEL);
+	if (!root)
+		goto out_mem;
+
+	root->blknum = 2;
+	root->type = type;
+	path[0]	= &root->first_block.child;
+
+	INIT_RADIX_TREE(&root->blocks, GFP_KERNEL);
+	radix_tree_insert(&root->blocks, 1, &root->first_block);
+
+	for (quota_tree_iter_start(&iter, zqtree, 0);
 	     (qd = my_radix_tree_iter_item(&iter));
-	     my_radix_tree_iter_next(&iter, qd->qid)) {
-		struct qtree_leaf *leaf;
-		if (qd->qid >= node_block->num + 256)
-			break;
-
-		if (!data_block
-		    || data_block->num + 1 > tree_root->data_per_block)
-			data_block = qtree_new_block(tree_root, 0, node_block);
-
-		data_block->num++;
-
-		leaf = kzalloc(sizeof(*leaf), GFP_NOFS);
-		leaf->qd = qd;
-		INIT_LIST_HEAD(&leaf->siblings);
-		list_add_tail(&leaf->siblings, &data_block->child);
-	}
-}
-
-void fill_childs(struct qtree_block *node_block,
-		 struct qtree_root *tree_root)
-{
-	unsigned long stop_key, shift = 8 * (QTREE_DEPTH - node_block->depth);
-	unsigned long cur_key;
-	unsigned long child_shift = 8 * (QTREE_DEPTH - node_block->depth - 1);
-	unsigned long dchild = 1UL << child_shift;
-	int r;
-	struct zqdata *qd;
-	struct zqtree *root = tree_root->quota_tree;
-
-	if (node_block->depth == QTREE_DEPTH - 1) {
-		fill_leafs(node_block, tree_root);
-		return;
-	}
-
-	cur_key = node_block->num;
-	stop_key = cur_key + (1UL << shift) - 1;
-
-	for (; cur_key < stop_key;) {
-		struct qtree_block *child;
-		qid_t qid;
-
-		r = quota_tree_gang_lookup(root, &qd, cur_key, 1);
-		if (!r || qd->qid >= stop_key)
-			break;
-
-		qid = qd->qid;
-
-		child = qtree_new_block(tree_root, qid & ~(dchild - 1),
-					node_block);
-
-		fill_childs(child, tree_root);
-
-		cur_key = (qid + dchild) & ~(dchild - 1);
-	}
-}
-
-void qtree_print(struct qtree_block *node)
-{
-	printk("blknum = %d, parentblknum = %d\n", node->blknum,
-	       node->parent ? node->parent->blknum : 0);
-	if (node->depth < QTREE_DEPTH) {
-		struct qtree_block *child;
-		list_for_each_entry(child, &node->child, siblings) {
-			qtree_print(child);
-		}
-	} else {
-		struct qtree_leaf *leaf;
-		list_for_each_entry(leaf, &node->child, siblings) {
-			printk("leaf = %p, qd = %p, qid = %u\n",
-			       leaf, leaf->qd, leaf->qd->qid);
+	     my_radix_tree_iter_next(&iter, qd->qid))
+	{
+		data_block = qtree_insert(root, qd);
+		if (!data_block)
+			goto out_mem;
+		block = qtree_get_pointer_block(block, path, root, qd->qid);
+		if (!block)
+			goto out_mem;
+		if (!block->child) {
+			block->child = (struct qtree_block *)data_block;
+			block->offset = data_block->n - 1;
+			block->is_leaf = 1;
 		}
 	}
+
+	/* renumerate data_blocks & insert them */
+	if (qtree_enumerate_data_blocks(root))
+		goto out_mem;
+
+	return root;
+
+out_mem:
+	printk(KERN_WARNING "Leaky\n");
+	return NULL;
 }
 
 static int qtree_output_block_node(char *buf, struct qtree_block *node)
 {
-	struct qtree_block *child;
-	uint32_t shift = 8 * (QTREE_DEPTH - node->depth - 1);
-
 	__le32 *ref = (__le32 *) buf;
-	list_for_each_entry(child, &node->child, siblings) {
-		uint32_t refnum = (child->num >> shift) & 255;
-		ref[refnum] = cpu_to_le32(child->blknum);
-#ifdef QTREE_DEBUG
-		printk(KERN_DEBUG "ref[%d] = %d\n", refnum, child->blknum);
-#endif /* QTREE_DEBUG */
+
+	node = node->child;
+	while (node) {
+		ref[node->num & 255] = cpu_to_le32(node->blknum);
+		node = node->next;
 	}
 
 	return QTREE_BLOCKSIZE;
 }
 
-static int qtree_output_block_leaf(char *buf, struct qtree_block *leaf_block)
+static int qtree_output_block_leaf(char *buf, struct qtree_block *leaf)
 {
 	__le32 *ref = (__le32 *) buf;
-	struct qtree_block *data_block;
+	uint32_t first_num = leaf->num << 8, last_num = first_num + 256,
+		 offset = leaf->offset, i;
+	struct qtree_data_block *data_block;
+	data_block = (struct qtree_data_block *)leaf->child;
 
-	list_for_each_entry(data_block, &leaf_block->child, siblings) {
-		struct qtree_leaf *leaf;
+	while (data_block && data_block->qid_first < last_num) {
+		for (i = offset; i < data_block->n; i++) {
+			struct zqdata *qd = data_block->data[i];
+			if (last_num <= qd->qid)
+				break;
 
-		list_for_each_entry(leaf, &data_block->child, siblings) {
-			if (leaf_block->num > leaf->qd->qid
-			    || leaf->qd->qid > leaf_block->num + 255)
-				/* Skip the leaf  */
-				continue;
-
-			ref[leaf->qd->qid & 255] =
-			    cpu_to_le32(data_block->blknum);
-#ifdef QTREE_DEBUG
-			printk(KERN_DEBUG "ref[%d] = %d\n",
-			       leaf->qd->qid & 255, data_block->blknum);
-#endif
+			ref[qd->qid & 255] = data_block->blknum;
 		}
+		if (i != data_block->n)
+			break;
+		data_block = data_block->next;
+		offset = 0;
 	}
 
 	return QTREE_BLOCKSIZE;
 }
 
-static int qtree_output_block_data(char *buf, struct qtree_block *data_block)
+static int qtree_output_block_data(char *buf, struct qtree_data_block *data_block)
 {
 	struct qt_disk_dqdbheader *dh =
 	    (struct qt_disk_dqdbheader *)buf;
 	struct v2r1_disk_dqblk *db =
 	    (struct v2r1_disk_dqblk *)(buf + sizeof(*dh));
-	struct qtree_leaf *leaf;
+	int i;
 
-	dh->dqdh_entries = data_block->num;
+	dh->dqdh_entries = data_block->n;
 
-	list_for_each_entry(leaf, &data_block->child, siblings) {
-		quota_data_to_v2r1_disk_dqblk(leaf->qd, db);
-		db++;
+
+	for (i = 0; i < data_block->n; i++, db++) {
+		quota_data_to_v2r1_disk_dqblk(data_block->data[i], db);
 	}
 
 	return QTREE_BLOCKSIZE;
@@ -292,9 +352,24 @@ static int qtree_output_header(char *buf, struct qtree_root *root)
 	dq_disk_info =
 	    (struct v2_disk_dqinfo *)(buf +
 				      sizeof(struct v2_disk_dqheader));
-	dq_disk_info->dqi_blocks = root->blocks + 1;
+	dq_disk_info->dqi_blocks = root->blknum;
 
 	return 1024;
+}
+
+static int is_data_block_ptr(void *ptr)
+{
+	return 1UL & (unsigned long)ptr;
+}
+
+static void *to_ptr(void *ptr)
+{
+	return (void *)(~1UL & (unsigned long)ptr);
+}
+
+static struct qtree_data_block *to_data_block_ptr(void *ptr)
+{
+	return (struct qtree_data_block *)to_ptr(ptr);
 }
 
 int qtree_output_block(char *buf, uint32_t blknum,
@@ -305,89 +380,20 @@ int qtree_output_block(char *buf, uint32_t blknum,
 	if (blknum == 0)
 		return qtree_output_header(buf, tree_root);
 
-	node = radix_tree_lookup(&tree_root->blocks_tree, blknum);
+	node = radix_tree_lookup(&tree_root->blocks, blknum);
 	if (!node)
 		return 0;
 
-#ifdef QTREE_DEBUG
-	printk(KERN_DEBUG "outblk = %d\n", blknum);
-#endif
-	if (node->depth < QTREE_DEPTH - 1) {
-		/* tree node */
-		return qtree_output_block_node(buf, node);
-	} else if (node->depth == QTREE_DEPTH - 1) {
-		/* tree leaf, points to data blocks */
-		return qtree_output_block_leaf(buf, node);
-	} else if (node->depth == QTREE_DEPTH) {
+	if (is_data_block_ptr(node)) {
 		/* data block */
-		return qtree_output_block_data(buf, node);
+		return qtree_output_block_data(buf, to_data_block_ptr(node));
+	} else if (node->is_leaf) {
+		/* tree leaf, points to data blocks */
+		return qtree_output_block_node(buf, node);
+	} else {
+		/* tree node */
+		return qtree_output_block_leaf(buf, node);
 	}
-
-	return 0;
-}
-
-struct qtree_root *qtree_build(int type, struct zqtree *quota_tree)
-{
-	struct qtree_root *root;
-	int blocks = 1;		//, i;
-
-	root = kzalloc(sizeof(*root), GFP_NOFS);
-	if (!root)
-		return NULL;
-
-	root->blocks = 1;
-	root->quota_tree = quota_tree;
-	root->data_per_block =
-		(QTREE_BLOCKSIZE - sizeof(struct qt_disk_dqdbheader))
-		 / sizeof(struct v2r1_disk_dqblk);
-	root->type = type;
-
-	memset(&root->root_block, 0, sizeof(root->root_block));
-	root->root_block.blknum = blocks;
-	INIT_LIST_HEAD(&root->root_block.child);
-	INIT_LIST_HEAD(&root->root_block.siblings);
-
-	radix_tree_insert(&root->blocks_tree, 1, &root->root_block);
-	fill_childs(&root->root_block, root);
-
-#ifdef QTREE_DEBUG
-	qtree_print(&root->root_block);
-#endif
-
-	return root;
-}
-
-static int qtree_free_block(struct qtree_block *node)
-{
-	struct qtree_leaf *leaf, *tmp;
-
-	if (node->depth == QTREE_DEPTH) {
-		/* Free leafs for the data block */
-		list_for_each_entry_safe(leaf, tmp, &node->child, siblings) {
-			list_del(&leaf->siblings);
-			kfree(leaf);
-		}
-	}
-
-	kfree(node);
-
-	return 0;
-}
-
-static int qtree_free(struct qtree_root *root)
-{
-	int i;
-	struct qtree_block *node;
-	if (!root)
-		return 0;
-
-	/* Tree root block is root->root_block, skip it */
-	for (i = 2; i < root->blocks; ++i) {
-		node = radix_tree_delete(&root->blocks_tree, i);
-		qtree_free_block(node);
-	}
-
-	kfree(root);
 
 	return 0;
 }
@@ -404,7 +410,7 @@ static int zfs_aquotf_vfsv2r1_open(struct inode *inode, struct file *file)
 		goto out_err;
 
 	quota_tree = zqtree_get_sync_quota_tree(sb, type);
-	root = qtree_build(type, quota_tree);
+	root = qtree_build(quota_tree, type);
 
 	file->private_data = root;
 
@@ -412,6 +418,37 @@ static int zfs_aquotf_vfsv2r1_open(struct inode *inode, struct file *file)
 
 out_err:
 	return err;
+}
+
+static uint32_t _get_blknum(void *ptr)
+{
+	if (is_data_block_ptr(ptr)) {
+		return to_data_block_ptr(ptr)->blknum;
+	} else {
+		return ((struct qtree_block *)ptr)->blknum;
+	}
+}
+
+static int qtree_free(struct qtree_root *root)
+{
+	void *blocks[32];
+	size_t n, blknum = 2, i;
+
+	while (true) {
+		n = radix_tree_gang_lookup(&root->blocks, blocks, blknum,
+					ARRAY_SIZE(blocks));
+
+		if (!n)
+			break;
+
+		for (i = 0; i < n; i++) {
+			blknum = _get_blknum(blocks[i]);
+			radix_tree_delete(&root->blocks, blknum);
+			kfree(to_ptr(blocks[i]));
+		}
+	}
+	kfree(root);
+	return 0;
 }
 
 static int zfs_aquotf_vfsv2r1_release(struct inode *inode, struct file *file)

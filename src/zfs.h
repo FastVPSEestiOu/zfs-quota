@@ -24,6 +24,9 @@ typedef struct zfs_prop_list {
 zfs_prop_list_t *zfs_get_prop_list(int quota_type);
 
 
+int zfs_fill_quotadata(void *zfs_handle, struct zqdata *quota_data,
+		       int type, qid_t id);
+
 int zfs_set_space_quota(void *zfs_handle, int quota_type, qid_t id,
 			uint64_t limit);
 #ifdef HAVE_ZFS_OBJECT_QUOTA
