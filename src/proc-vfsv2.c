@@ -206,6 +206,8 @@ struct qtree_block *qtree_get_pointer_block(struct qtree_block *block,
 		if (path[i])
 			path[i]->next = block;
 		path[i] = block;
+		if (i < QTREE_PATH - 1)
+			path[i + 1] = NULL;
 	}
 
 	return block;
@@ -308,7 +310,7 @@ static int qtree_output_block_leaf(char *buf, struct qtree_block *leaf)
 			if (last_num <= qd->qid)
 				break;
 
-			ref[qd->qid & 255] = data_block->blknum;
+			ref[qd->qid & 255] = cpu_to_le32(data_block->blknum);
 		}
 		if (i != data_block->n)
 			break;
