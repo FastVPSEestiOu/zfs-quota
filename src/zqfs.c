@@ -30,6 +30,7 @@
 #include <linux/string.h>
 #include <linux/dcache.h>
 #include <linux/fs_struct.h>
+#include <linux/parser.h>
 
 #include <spl_config.h>
 #include <zfs_config.h>
@@ -50,6 +51,7 @@
 
 struct zqfs_fs_info {
 	struct vfsmount *real_mnt;
+	char fs_root[PATH_MAX];
 	char fake_dev_name[PATH_MAX];
 };
 
@@ -159,8 +161,8 @@ static int zqfs_show_options(struct seq_file *m, struct vfsmount *mnt)
 {
 	struct zqfs_fs_info *fs_info = mnt->mnt_sb->s_fs_info;
 
-	seq_printf(m, ",dev=%s,fsroot=%s",
-		   fs_info->fake_dev_name, mnt->mnt_root->d_name.name);
+	seq_printf(m, ",devname=%s,fsroot=%s",
+		   fs_info->fake_dev_name, fs_info->fs_root);
 #ifdef CONFIG_QUOTA
 	if (sb_has_quota_loaded(mnt->mnt_sb, USRQUOTA))
 		seq_puts(m, ",usrquota");
@@ -175,8 +177,8 @@ static int zqfs_show_options(struct seq_file *m, struct dentry *d_root)
 	struct super_block *sb = d_root->d_sb;
 	struct zqfs_fs_info *fs_info = sb->s_fs_info;
 
-	seq_printf(m, ",dev=%s,fsroot=%s",
-		   fs_info->fake_dev_name, sb->s_root->d_name.name);
+	seq_printf(m, ",devname=%s,fsroot=%s",
+		   fs_info->fake_dev_name, fs_info->fs_root);
 	seq_puts(m, ",usrquota");
 	seq_puts(m, ",grpquota");
 	return 0;
@@ -428,31 +430,81 @@ int path_lookup(const char *name, unsigned int flags, struct nameidata *nd)
 }
 #endif /* #ifdef HAVE_PATH_LOOKUP */
 
+enum {
+	Opt_devname, Opt_fsroot, Opt_err
+};
+
+static const match_table_t tokens = {
+	{Opt_devname, "devname=%s"},
+	{Opt_fsroot, "fsroot=%s"},
+	{Opt_err, NULL}
+};
+
+static inline char *strncpy_from_arg(char *dest, substring_t *arg)
+{
+	return strncpy(dest, arg->from, arg->to - arg->from);
+}
+
+struct zqfs_fs_info *zqfs_parse_options(char *options)
+{
+	struct zqfs_fs_info *fs_info;
+	substring_t args[MAX_OPT_ARGS];
+	int token, err;
+	char *p;
+
+	fs_info = kzalloc(sizeof(*fs_info), GFP_KERNEL);
+	if (!fs_info)
+		return ERR_PTR(-ENOMEM);
+
+	while ((p = strsep(&options, ",")) != NULL) {
+		if (!*p)
+			continue;
+		args[0].to = args[0].from = NULL;
+		token = match_token(p, tokens, args);
+		switch (token) {
+		case Opt_devname:
+			strncpy_from_arg(fs_info->fake_dev_name, &args[0]);
+			break;
+		case Opt_fsroot:
+			strncpy_from_arg(fs_info->fs_root, &args[0]);
+			break;
+		case Opt_err:
+			err = -EINVAL;
+			goto out_err;
+		}
+	}
+
+	if (!fs_info->fs_root[0] || !fs_info->fake_dev_name[0]) {
+		printk(KERN_ERR
+		       "Both fsroot and devname options are required\n");
+		err = -EINVAL;
+		goto out_err;
+	}
+
+	return fs_info;
+
+out_err:
+	kfree(fs_info);
+	return ERR_PTR(err);
+}
+
 static int zqfs_fill_super(struct super_block *s, void *data, int silent)
 {
 	int err;
 	struct zqfs_fs_info *fs_info = NULL;
 	struct nameidata nd;
 
-	char *root = data;
-	char *devname;
-
-
-	err = -EINVAL;
-	if (root == NULL)
+	fs_info = zqfs_parse_options(data);
+	if (IS_ERR(fs_info)) {
+		err = PTR_ERR(fs_info);
 		goto out_err;
+	}
 
-	devname = strchr(root, ',');
-	if (devname == NULL)
-		goto out_err;
-
-	*devname++ = 0;
-	if (*devname == 0)
-		goto out_err;
-
-	err = path_lookup(root, LOOKUP_FOLLOW|LOOKUP_DIRECTORY, &nd);
+	err = path_lookup(fs_info->fs_root, LOOKUP_FOLLOW|LOOKUP_DIRECTORY,
+			  &nd);
 	if (err)
 		goto out_err;
+	fs_info->real_mnt = mntget(nd.path.mnt);
 
 	err = zqfs_init_export_op(s, nd.path.dentry->d_sb);
 	if (err)
@@ -461,16 +513,6 @@ static int zqfs_fill_super(struct super_block *s, void *data, int silent)
 	err = zqfs_init_blkdev(s);
 	if (err)
 		goto out_path;
-
-	err = -ENOMEM;
-	fs_info = kzalloc(sizeof(*fs_info), GFP_KERNEL);
-	if (fs_info == NULL)
-		goto out_path;
-
-	strncpy(fs_info->fake_dev_name, devname,
-		sizeof(fs_info->fake_dev_name));
-	fs_info->real_mnt = mntget(nd.path.mnt);
-
 
 	s->s_fs_info = fs_info;
 	s->s_root = alloc_root(s, nd.path.dentry);
