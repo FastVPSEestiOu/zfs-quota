@@ -57,6 +57,12 @@ struct zqfs_fs_info {
 
 static struct super_operations zqfs_super_ops;
 
+#ifdef CONFIG_VE
+static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
+{
+	return statfs_by_dentry(dentry, buf);
+}
+#else /* #ifdef CONFIG_VE */
 static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
 	struct dentry *orig_dentry = dentry->d_fsdata;
@@ -72,6 +78,7 @@ static int zqfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 
 	return err;
 }
+#endif /* #ifdef CONFIG_VE #else */
 
 #ifdef CONFIG_VE
 static int zqfs_start_write(struct super_block *sb, int level, bool wait)
