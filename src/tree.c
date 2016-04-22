@@ -6,255 +6,60 @@
 #include <linux/sched.h>
 #include <linux/mount.h>
 
-#include "radix-tree-iter.h"
+#include "handle.h"
 #include "proc.h"
+#include "radix-tree-iter.h"
 #include "tree.h"
 #include "zfs.h"
-
-/* Z(FS)Q(UOTA) part. All the handles are stored into radix-tree zqhandle_tree
- * with access protected by zqhandle_tree_mutex.
- */
-
-static DEFINE_MUTEX(zqhandle_tree_mutex);
-static RADIX_TREE(zqhandle_tree, GFP_KERNEL);
-
-struct zqhandle {
-	struct super_block *sb;
-	atomic_t refcnt;
-	void *zfsh;
-
-	spinlock_t lock;
-	struct zqtree *quota[MAXQUOTAS];
-};
-
-static inline void *get_zfsh(struct super_block *sb)
-{
-#ifdef CONFIG_VE
-	return sb->s_op->get_quota_root(sb)->i_sb->s_fs_info;
-#else /* #ifdef CONFIG_VE */
-	return sb->s_root->d_inode->i_sb->s_fs_info;
-#endif /* #else #ifdef CONFIG_VE */
-}
-
-int zqhandle_register_superblock(struct super_block *sb)
-{
-	struct zqhandle *data = NULL;
-	int err;
-
-	mutex_lock(&zqhandle_tree_mutex);
-	data = radix_tree_delete(&zqhandle_tree, (unsigned long)sb);
-	mutex_unlock(&zqhandle_tree_mutex);
-
-	if (data) {
-		WARN(1, "simfs sb = %p was registered already, freeing", sb);
-		/* FIXME free the trees first */
-		kfree(data);
-	}
-
-	err = -ENOMEM;
-	data = kzalloc(sizeof(struct zqhandle), GFP_KERNEL);
-	if (data == NULL)
-		goto out;
-
-	data->sb = sb;
-	data->zfsh = get_zfsh(sb);
-	atomic_set(&data->refcnt, 1);
-
-	mutex_lock(&zqhandle_tree_mutex);
-	err = radix_tree_insert(&zqhandle_tree, (unsigned long)sb, data);
-	mutex_unlock(&zqhandle_tree_mutex);
-	if (err)
-		goto out_free;
-
-	zqproc_register_handle(sb);
-out:
-	return err;
-out_free:
-	kfree(data);
-	goto out;
-}
-
-void zqhandle_put(struct zqhandle *handle)
-{
-	if (atomic_dec_and_test(&handle->refcnt)) {
-		int i;
-		spin_lock(&handle->lock);
-		for (i = 0; i < MAXQUOTAS; i++) {
-			zqtree_put(handle->quota[i]);
-			handle->quota[i] = NULL;
-		}
-		spin_unlock(&handle->lock);
-		kfree(handle);
-	}
-}
-
-int zqhandle_unregister_superblock(struct super_block *sb)
-{
-	struct zqhandle *handle;
-	int err = -ENOENT;
-
-	mutex_lock(&zqhandle_tree_mutex);
-	handle = radix_tree_delete(&zqhandle_tree, (unsigned long)sb);
-
-	zqproc_unregister_handle(sb);
-
-	if (handle == NULL)
-		goto out;
-
-	err = 0;
-	zqhandle_put(handle);
-
-out:
-	mutex_unlock(&zqhandle_tree_mutex);
-	return 0;
-}
-
-static inline void zqhandle_ref(struct zqhandle *handle)
-{
-	atomic_inc(&handle->refcnt);
-}
-
-static inline struct zqhandle *zqhandle_get(void *sb)
-{
-	struct zqhandle *handle;
-
-	mutex_lock(&zqhandle_tree_mutex);
-	handle = radix_tree_lookup(&zqhandle_tree, (unsigned long)sb);
-
-	if (handle == NULL)
-		goto out;
-
-	zqhandle_ref(handle);
-
-out:
-	mutex_unlock(&zqhandle_tree_mutex);
-	return handle;
-}
-
-static struct zqtree *zqtree_new(void);
-static struct zqtree *zqtree_get(struct zqtree *);
-static int zqtree_young(struct zqtree *quota_tree);
-
-struct zqtree *zqhandle_get_tree(struct zqhandle *handle, int type)
-{
-	struct zqtree *quota_tree;
-	if (type < 0 || type >= MAXQUOTAS)
-		return NULL;
-
-	spin_lock(&handle->lock);
-again:
-	quota_tree = handle->quota[type];
-	spin_unlock(&handle->lock);
-
-	if (!quota_tree) {
-		quota_tree = zqtree_new();
-
-		spin_lock(&handle->lock);
-		if (handle->quota[type]) {
-			zqtree_put(quota_tree);
-			goto again;
-		}
-		handle->quota[type] = quota_tree;
-		spin_unlock(&handle->lock);
-	} else if (!zqtree_young(quota_tree)) {
-		/* The tree is too old, let it fly away */
-		quota_tree = xchg(&handle->quota[type], NULL);
-		zqtree_put(quota_tree);
-
-		spin_lock(&handle->lock);
-		goto again;
-	}
-
-	return zqtree_get(quota_tree);
-}
-
-/* ZQ handle get/set quota */
-int zqhandle_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
-{
-	int err = -EIO;
-	struct zqdata quota_data;
-	struct zqhandle *handle = zqhandle_get(sb);
-
-	if (!handle)
-		goto out;
-
-	if (zfs_fill_quotadata(handle->zfsh, &quota_data, type, id))
-		goto out_zqhandle_put;
-
-	di->dqb_curspace = quota_data.space_used;
-	di->dqb_valid |= QIF_SPACE;
-	if (quota_data.space_quota) {
-		di->dqb_bhardlimit = di->dqb_bsoftlimit =
-		    quota_data.space_quota / 1024;
-		di->dqb_valid |= QIF_BLIMITS;
-	}
-
-#ifdef HAVE_ZFS_OBJECT_QUOTA
-	di->dqb_curinodes = quota_data.obj_used;
-	di->dqb_valid |= QIF_INODES;
-	if (quota_data.obj_quota) {
-		di->dqb_ihardlimit = di->dqb_isoftlimit = quota_data.obj_quota;
-		di->dqb_valid |= QIF_ILIMITS;
-	}
-#endif /* HAVE_ZFS_OBJECT_QUOTA */
-
-	err = 0;
-out_zqhandle_put:
-	zqhandle_put(handle);
-out:
-	return err;
-}
-
-static inline uint64_t min_except_zero(uint64_t a, uint64_t b)
-{
-	return min(a ?: b, b ?: a);
-}
-
-int zqhandle_set_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
-{
-	struct zqhandle *handle = zqhandle_get(sb);
-	int ret = 0;
-	uint64_t limit;
-
-	if (!handle)
-		return -ENOENT;
-
-	if (di->dqb_valid & QIF_BLIMITS) {
-		limit = 1024 * min_except_zero(di->dqb_bhardlimit,
-					       di->dqb_bsoftlimit);
-		ret = zfs_set_space_quota(handle->zfsh, type,
-					  id, limit);
-		if (ret)
-			goto out;
-	}
-
-#ifdef HAVE_ZFS_OBJECT_QUOTA
-	if (di->dqb_valid & QIF_ILIMITS) {
-		limit = min_except_zero(di->dqb_ihardlimit,
-					di->dqb_isoftlimit);
-		ret = zfs_set_object_quota(handle->zfsh, type,
-					   id, limit);
-		if (ret)
-			goto out;
-	}
-#endif /* HAVE_ZFS_OBJECT_QUOTA */
-
-out:
-	zqhandle_put(handle);
-	return ret;
-}
-
 
 /* ZFS QUOTA radix-tree key qid -> value quota_data */
 
 struct kmem_cache *quota_data_cachep = NULL;
 
+struct blktree_root;
+
 struct zqtree {
-	atomic_t refcnt;
-	unsigned long created;
-	struct radix_tree_root radix;
+	atomic_t		refcnt;
+	atomic_t		state;
+	struct radix_tree_root	radix;
+	struct blktree_root	*blktree_root;
 };
 
+struct zqtree *zqtree_new(void)
+{
+	struct zqtree *qt;
+
+	qt = kzalloc(sizeof(*qt), GFP_KERNEL);
+	if (!qt)
+		return NULL;
+	atomic_set(&qt->refcnt, 1);
+	atomic_set(&qt->state, ZQTREE_EMPTY);
+	INIT_RADIX_TREE(&qt->radix, GFP_KERNEL);
+
+	return qt;
+}
+
+struct zqtree *zqtree_get(struct zqtree *qt)
+{
+	if (qt)
+		atomic_inc(&qt->refcnt);
+	return qt;
+}
+
+static int zqtree_quota_tree_destroy(struct zqtree *quota_tree);
+
+void zqtree_put(struct zqtree *qt)
+{
+	if (!qt)
+		return;
+
+	if (atomic_dec_and_test(&qt->refcnt)) {
+		zqtree_quota_tree_destroy(qt);
+		kfree(qt);
+	}
+}
+
+/* Private part */
 static int zqtree_quota_tree_destroy(struct zqtree *quota_tree)
 {
 	my_radix_tree_iter_t iter;
@@ -273,43 +78,8 @@ static int zqtree_quota_tree_destroy(struct zqtree *quota_tree)
 	return 0;
 }
 
-static struct zqtree *zqtree_new()
-{
-	struct zqtree *qt;
-
-	qt = kzalloc(sizeof(*qt), GFP_KERNEL);
-	if (!qt)
-		return NULL;
-	atomic_set(&qt->refcnt, 1);
-	INIT_RADIX_TREE(&qt->radix, GFP_KERNEL);
-
-	return qt;
-}
-
-static int zqtree_young(struct zqtree *quota_tree)
-{
-	return quota_tree->created + 10 * HZ < jiffies;
-}
-
-static struct zqtree *zqtree_get(struct zqtree *qt)
-{
-	if (qt)
-		atomic_inc(&qt->refcnt);
-	return qt;
-}
-
-void zqtree_put(struct zqtree *qt)
-{
-	if (!qt)
-		return;
-
-	if (atomic_dec_and_test(&qt->refcnt)) {
-		zqtree_quota_tree_destroy(qt);
-		kfree(qt);
-	}
-}
-
-struct zqdata *zqtree_get_quota_data(struct zqtree *quota_tree, qid_t id)
+static struct zqdata *zqtree_get_quota_data(struct zqtree *quota_tree,
+					    qid_t id)
 {
 	int err;
 	struct zqdata *quota_data;
@@ -335,6 +105,48 @@ struct zqdata *zqtree_get_quota_data(struct zqtree *quota_tree, qid_t id)
 	return quota_data;
 }
 
+static int zqtree_iterate_prop(void *zfsh,
+			       struct zqtree *quota_tree,
+			       zfs_prop_list_t *prop)
+{
+	zfs_prop_iter_t iter;
+	zfs_prop_pair_t *pair;
+
+	struct zqdata *qd;
+
+	zfs_prop_iter_start(zfsh, prop->prop, &iter);
+	while ((pair = zfs_prop_iter_item(&iter))) {
+
+		qd = zqtree_get_quota_data(quota_tree, pair->rid);
+		*(uint64_t *)((void *)qd + prop->offset) = pair->value;
+
+		zfs_prop_iter_next(&iter);
+	}
+	zfs_prop_iter_stop(&iter);
+
+	return zfs_prop_iter_error(&iter);
+}
+
+int zqtree_build_qdtree(struct zqtree *zqtree)
+{
+	int ret = 0;
+	zfs_prop_list_t *prop;
+
+	for (prop = zfs_get_prop_list(type); prop->prop >= 0; ++prop) {
+		ret = zqtree_iterate_prop(handle->zfsh, zqtree, prop);
+		if (ret && ret != EOPNOTSUPP)
+			break;
+	}
+
+	if (ret == EOPNOTSUPP)
+		ret = 0;
+
+	return ret;
+}
+
+/**
+ * Printing utililities
+ */
 void zqtree_print_quota_data(struct zqdata *qd)
 {
 	printk(KERN_DEBUG "qd = %p, "
@@ -365,84 +177,453 @@ int zqtree_print(struct zqtree *quota_tree)
 	return 0;
 }
 
-static int zqtree_iterate_prop(void *zfsh,
-			       struct zqtree *quota_tree,
-			       zfs_prop_list_t *prop)
+
+/****************************************************************************
+ *			Block Tree of VFSv2 format			    *
+ ****************************************************************************/
+
+#define QTREE_BLOCKSIZE     1024
+
+/* First generic header */
+struct v2_disk_dqheader {
+	__le32 dqh_magic;	/* Magic number identifying file */
+	__le32 dqh_version;	/* File version */
+};
+
+/* Header with type and version specific information */
+struct v2_disk_dqinfo {
+	__le32 dqi_bgrace;	/* Time before block soft limit becomes hard limit */
+	__le32 dqi_igrace;	/* Time before inode soft limit becomes hard limit */
+	__le32 dqi_flags;	/* Flags for quotafile (DQF_*) */
+	__le32 dqi_blocks;	/* Number of blocks in file */
+	__le32 dqi_free_blk;	/* Number of first free block in the list */
+	__le32 dqi_free_entry;	/* Number of block with at least one free entry */
+};
+
+struct qt_disk_dqdbheader {
+	__le32 dqdh_next_free;	/* Number of next block with free entry */
+	__le32 dqdh_prev_free;	/* Number of previous block with free entry */
+	__le16 dqdh_entries;	/* Number of valid entries in block */
+	__le16 dqdh_pad1;
+	__le32 dqdh_pad2;
+};
+
+struct v2r1_disk_dqblk {
+	__le32 dqb_id;		/* id this quota applies to */
+	__le32 dqb_pad;
+	__le64 dqb_ihardlimit;	/* absolute limit on allocated inodes */
+	__le64 dqb_isoftlimit;	/* preferred inode limit */
+	__le64 dqb_curinodes;	/* current # allocated inodes */
+	__le64 dqb_bhardlimit;	/* absolute limit on disk space (in QUOTABLOCK_SIZE) */
+	__le64 dqb_bsoftlimit;	/* preferred limit on disk space (in QUOTABLOCK_SIZE) */
+	__le64 dqb_curspace;	/* current space occupied (in bytes) */
+	__le64 dqb_btime;	/* time limit for excessive disk use */
+	__le64 dqb_itime;	/* time limit for excessive inode use */
+};
+
+static int quota_data_to_v2r1_disk_dqblk(struct zqdata *quota_data,
+					 struct v2r1_disk_dqblk *v2r1)
 {
-	zfs_prop_iter_t iter;
-	zfs_prop_pair_t *pair;
+	v2r1->dqb_id = cpu_to_le32(quota_data->qid);
+	v2r1->dqb_bsoftlimit = v2r1->dqb_bhardlimit =
+	    cpu_to_le64(quota_data->space_quota / 1024);
+	v2r1->dqb_curspace = cpu_to_le64(quota_data->space_used);
+#ifdef HAVE_ZFS_OBJECT_QUOTA
+	v2r1->dqb_ihardlimit = v2r1->dqb_isoftlimit =
+	    cpu_to_le64(quota_data->obj_quota);
+	v2r1->dqb_curinodes = cpu_to_le64(quota_data->obj_used);
+#endif /* HAVE_ZFS_OBJECT_QUOTA */
+	v2r1->dqb_btime = v2r1->dqb_itime = cpu_to_le64(0);
 
-	struct zqdata *qd;
-
-	zfs_prop_iter_start(zfsh, prop->prop, &iter);
-	while ((pair = zfs_prop_iter_item(&iter))) {
-
-		qd = zqtree_get_quota_data(quota_tree, pair->rid);
-		*(uint64_t *)((void *)qd + prop->offset) = pair->value;
-
-		zfs_prop_iter_next(&iter);
-	}
-	zfs_prop_iter_stop(&iter);
-
-	return zfs_prop_iter_error(&iter);
+	return sizeof(*v2r1);
 }
 
-struct zqtree *zqtree_get_sync_quota_tree(void *sb, int type)
+
+#define	DATA_PER_BLOCK	\
+	((QTREE_BLOCKSIZE - sizeof(struct qt_disk_dqdbheader)) / \
+	 sizeof(struct v2r1_disk_dqblk))
+
+#define QTREE_DEPTH     4
+
+#define	DATA_BLOCK_MASK	2UL
+
+struct blktree_data_block {
+	uint32_t			blknum;
+	struct	blktree_data_block	*next;
+	uint32_t			qid_first;
+	uint32_t			qid_last;
+	uint32_t			n;
+	struct zqdata			*data[DATA_PER_BLOCK];
+};
+
+struct blktree_block {
+	uint32_t		blknum;
+	uint32_t		is_leaf:1;
+	uint32_t		offset:7;
+	uint32_t		num:24;
+	struct blktree_block	*next;
+	union {
+		struct blktree_block		*child;
+		struct blktree_data_block	*data_child;
+	};
+};
+
+struct blktree_root {
+	struct zqtree			*zqtree;
+	uint32_t			type;
+	uint32_t			blknum;
+
+	struct blktree_block		first_block;
+
+	struct blktree_data_block	*first_data_block;
+	struct blktree_data_block	*data_block;
+
+	struct radix_tree_root		blocks;
+};
+
+static struct blktree_data_block *
+blktree_get_datablock(struct blktree_root *tree)
 {
-	struct zqhandle *handle = zqhandle_get(sb);
-	struct zqtree *quota_tree;
-	int ret = 0;
+	struct blktree_data_block *data_block = tree->data_block;
 
-	zfs_prop_list_t *prop;
+	if (!data_block || data_block->n == DATA_PER_BLOCK) {
+		data_block = kzalloc(sizeof(*data_block), GFP_KERNEL);
+		if (!data_block)
+			return NULL;
 
-	quota_tree = zqhandle_get_tree(handle, type);
-	/* The tree is being used already, don't update it */
-	if (atomic_read(&quota_tree->refcnt) > 2)
-		return quota_tree;
+		if (tree->data_block) {
+			tree->data_block->next = data_block;
+			tree->data_block = data_block;
+		} else {
+			tree->first_data_block = tree->data_block = data_block;
+		}
+	}
 
-	for (prop = zfs_get_prop_list(type); prop->prop >= 0; ++prop) {
-		ret = zqtree_iterate_prop(handle->zfsh, quota_tree, prop);
-		if (ret && ret != EOPNOTSUPP)
+	return data_block;
+}
+
+static struct blktree_data_block *
+blktree_insert(struct blktree_root *tree, struct zqdata *qd)
+{
+	struct blktree_data_block *data_block;
+
+	data_block = blktree_get_datablock(tree);
+	if (!data_block)
+		return NULL;
+
+	data_block->data[data_block->n] = qd;
+	if (!data_block->n)
+		data_block->qid_first = qd->qid;
+	data_block->qid_last = qd->qid;
+	data_block->n++;
+
+	return data_block;
+}
+
+static struct blktree_block *
+blktree_new_block(struct blktree_root *root, uint32_t num)
+{
+	struct blktree_block *block;
+	int err;
+
+	block = kzalloc(sizeof(*block), GFP_KERNEL);
+	if (!block)
+		return NULL;
+
+
+	block->num = num;
+	block->blknum  = root->blknum++;
+
+	if (!root->first_block.child)
+		root->first_block.child = block;
+
+	err = radix_tree_insert(&root->blocks, block->blknum, block);
+	if (err)
+		goto out_err;
+
+	return block;
+out_err:
+	kfree(block);
+	return NULL;
+}
+
+#define	QTREE_PATH	(QTREE_DEPTH - 1)
+
+static inline uint32_t
+qid_to_prefix(qid_t qid, int level)
+{
+	return qid >> (8 * (QTREE_PATH - level));
+}
+
+static inline int
+is_qid_in_block(struct blktree_block **path, qid_t qid, int l)
+{
+	return path[l] && qid_to_prefix(qid, l) == path[l]->num;
+}
+
+struct blktree_block *
+blktree_get_pointer_block(struct blktree_block *block,
+			  struct blktree_block **path,
+			  struct blktree_root *root,
+			  qid_t qid)
+{
+	int i;
+
+	if (block && qid_to_prefix(qid, QTREE_PATH - 1) == block->num)
+		return block;
+
+	/* Go up tree until block can contain qid */
+	for (i = QTREE_PATH - 1; i >= 0 && !is_qid_in_block(path, qid, i);
+	     i--);
+
+	/* Now allocate new blocks */
+	for (i++; i <= QTREE_PATH - 1; i++) {
+		block = blktree_new_block(root, qid_to_prefix(qid, i));
+		if (i > 0 && !path[i - 1]->child)
+			path[i - 1]->child = block;
+		if (path[i])
+			path[i]->next = block;
+		path[i] = block;
+		if (i < QTREE_PATH - 1)
+			path[i + 1] = NULL;
+	}
+
+	return block;
+}
+
+static int
+blktree_enumerate_data_blocks(struct blktree_root *root)
+{
+	struct blktree_data_block *data_block;
+	int err = 0;
+	for (data_block = root->first_data_block;
+	     data_block; data_block = data_block->next)
+	{
+		data_block->blknum = root->blknum++;
+		err = radix_tree_insert(&root->blocks, data_block->blknum,
+					(void *)(DATA_BLOCK_MASK |
+						 (unsigned long)data_block));
+		if (err)
 			break;
 	}
 
-	if (ret && ret != EOPNOTSUPP) {
-		zqtree_put(quota_tree);
-		quota_tree = NULL;
+	return err;
+}
+
+static struct blktree_root *
+blktree_build(struct zqtree *zqtree, uint32_t type)
+{
+	struct blktree_block *path[QTREE_PATH] = {
+		[0 ... QTREE_PATH - 1]	= 0
+	};
+
+	struct blktree_root *root;
+	struct blktree_block *block = NULL;
+	struct blktree_data_block *data_block;
+	struct zqdata *qd;
+	my_radix_tree_iter_t iter;
+
+	root = kzalloc(sizeof(*root), GFP_KERNEL);
+	if (!root)
+		goto out_mem;
+
+	root->blknum = 2;
+	root->type = type;
+	root->first_block.blknum = 1;
+	root->zqtree = zqtree;
+
+	INIT_RADIX_TREE(&root->blocks, GFP_KERNEL);
+	radix_tree_insert(&root->blocks, 1, &root->first_block);
+
+	for (my_radix_tree_iter_start(&iter, &zqtree->radix, 0);
+	     (qd = my_radix_tree_iter_item(&iter));
+	     my_radix_tree_iter_next(&iter, qd->qid))
+	{
+		data_block = blktree_insert(root, qd);
+		if (!data_block)
+			goto out_mem;
+		block = blktree_get_pointer_block(block, path, root, qd->qid);
+		if (!block)
+			goto out_mem;
+		if (!block->child) {
+			block->data_child = data_block;
+			block->offset = data_block->n - 1;
+			block->is_leaf = 1;
+		}
 	}
 
-	zqhandle_put(handle);
-	return quota_tree;
+	/* renumerate data_blocks & insert them */
+	if (blktree_enumerate_data_blocks(root))
+		goto out_mem;
+
+	return root;
+
+out_mem:
+	printk(KERN_WARNING "Leaky\n");
+	return NULL;
 }
 
-
-
-
-#if 1
-void quota_tree_iter_start(
-		my_radix_tree_iter_t *iter,
-		struct zqtree *root,
-		unsigned long start_key)
+static int
+blktree_output_block_node(struct blktree_block *node, char *buf)
 {
-	my_radix_tree_iter_start(iter, &root->radix, start_key);
+	__le32 *ref = (__le32 *) buf;
+
+	node = node->child;
+	while (node) {
+		ref[node->num & 255] = cpu_to_le32(node->blknum);
+		node = node->next;
+	}
+
+	return QTREE_BLOCKSIZE;
 }
 
-int quota_tree_gang_lookup(struct zqtree *quota_tree,
-			   struct zqdata **pqd,
-			   unsigned long start_key,
-			   unsigned int max_items)
+static int
+blktree_output_block_leaf(struct blktree_block *leaf, char *buf)
 {
-	return radix_tree_gang_lookup(
-		&quota_tree->radix,
-		(void**)pqd,
-		start_key,
-		max_items);
+	__le32 *ref = (__le32 *) buf;
+	uint32_t first_num = leaf->num << 8, last_num = first_num + 256,
+		 offset = leaf->offset, i;
+	struct blktree_data_block *data_block = leaf->data_child;
+
+	BUG_ON(!leaf->is_leaf);
+
+	while (data_block && data_block->qid_first < last_num) {
+		for (i = offset; i < data_block->n; i++) {
+			struct zqdata *qd = data_block->data[i];
+			if (last_num <= qd->qid)
+				break;
+
+			ref[qd->qid & 255] = cpu_to_le32(data_block->blknum);
+		}
+		if (i != data_block->n)
+			break;
+		data_block = data_block->next;
+		offset = 0;
+	}
+
+	return QTREE_BLOCKSIZE;
 }
-#endif
+
+static int
+blktree_output_block_data(struct blktree_data_block *data_block, char *buf)
+{
+	struct qt_disk_dqdbheader *dh =
+	    (struct qt_disk_dqdbheader *)buf;
+	struct v2r1_disk_dqblk *db =
+	    (struct v2r1_disk_dqblk *)(buf + sizeof(*dh));
+	int i;
+
+	dh->dqdh_entries = data_block->n;
 
 
+	for (i = 0; i < data_block->n; i++, db++) {
+		quota_data_to_v2r1_disk_dqblk(data_block->data[i], db);
+	}
 
+	return QTREE_BLOCKSIZE;
+}
 
+#define V2_INITQMAGICS {\
+	0xd9c01f11,     /* USRQUOTA */\
+	0xd9c01927      /* GRPQUOTA */\
+}
+
+static int
+blktree_output_header(struct blktree_root *root, char *buf)
+{
+	static const uint quota_magics[] = V2_INITQMAGICS;
+
+	struct v2_disk_dqheader *dqh = (struct v2_disk_dqheader *)buf;
+	struct v2_disk_dqinfo *dq_disk_info;
+
+	dqh->dqh_magic = quota_magics[root->type];
+	dqh->dqh_version = 1;
+
+	dq_disk_info =
+	    (struct v2_disk_dqinfo *)(buf +
+				      sizeof(struct v2_disk_dqheader));
+	dq_disk_info->dqi_blocks = root->blknum;
+
+	return QTREE_BLOCKSIZE;
+}
+
+static int is_data_block_ptr(void *ptr)
+{
+	return DATA_BLOCK_MASK & (unsigned long)ptr;
+}
+
+static void *to_ptr(void *ptr)
+{
+	return (void *)(~DATA_BLOCK_MASK & (unsigned long)ptr);
+}
+
+static struct blktree_data_block *to_data_block_ptr(void *ptr)
+{
+	return (struct blktree_data_block *)to_ptr(ptr);
+}
+
+int blktree_output_block(struct blktree_root *tree_root,
+			 char *buf, uint32_t blknum)
+{
+	struct blktree_block *node;
+
+	if (blknum == 0)
+		return blktree_output_header(tree_root, buf);
+
+	node = radix_tree_lookup(&tree_root->blocks, blknum);
+	if (!node)
+		return 0;
+
+	if (is_data_block_ptr(node)) {
+		/* data block */
+		return blktree_output_block_data(to_data_block_ptr(node), buf);
+	} else if (node->is_leaf) {
+		/* tree leaf, points to data blocks */
+		return blktree_output_block_leaf(node, buf);
+	} else {
+		/* tree node */
+		return blktree_output_block_node(node, buf);
+	}
+
+	return 0;
+}
+
+static uint32_t _get_blknum(void *ptr)
+{
+	if (is_data_block_ptr(ptr)) {
+		return to_data_block_ptr(ptr)->blknum;
+	} else {
+		return ((struct blktree_block *)ptr)->blknum;
+	}
+}
+
+static int blktree_free(struct blktree_root *root)
+{
+	void *blocks[32];
+	size_t n, blknum = 2, i;
+
+	zqtree_put(root->zqtree);
+
+	while (true) {
+		n = radix_tree_gang_lookup(&root->blocks, blocks, blknum,
+					ARRAY_SIZE(blocks));
+
+		if (!n)
+			break;
+
+		for (i = 0; i < n; i++) {
+			blknum = _get_blknum(blocks[i]);
+			radix_tree_delete(&root->blocks, blknum);
+			kfree(to_ptr(blocks[i]));
+		}
+	}
+	kfree(root);
+	return 0;
+}
+
+/****************************************************************************
+ *			Common init functions				    *
+ ****************************************************************************/
 int __init zfsquota_tree_init(void)
 {
 	quota_data_cachep =

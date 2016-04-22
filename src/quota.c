@@ -5,7 +5,7 @@
 #include <linux/fs.h>
 #include <linux/quota.h>
 
-#include "tree.h"
+#include "handle.h"
 
 static int zfsquota_get_dqblk(struct super_block *sb, int type,
 		       qid_t id, struct if_dqblk *di)

@@ -1,7 +1,12 @@
 
 obj-m = zfs-quota.o zqfs.o
-zfs-quota-y := quota.o tree.o zfs.o radix-tree-iter.o proc-vfsv2.o
+zfs-quota-y += handle.o
 zfs-quota-y += proc.o
+zfs-quota-y += proc-vfsv2.o
+zfs-quota-y += quota.o
+zfs-quota-y += radix-tree-iter.o
+zfs-quota-y += tree.o
+zfs-quota-y += zfs.o
 ifneq ($(KERNELVERSION),)
  ifeq ($(CONFIG_VE),y)
 zfs-quota-y += proc-vz.o
