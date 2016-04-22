@@ -59,6 +59,70 @@ void zqtree_put(struct zqtree *qt)
 	}
 }
 
+static DECLARE_WAITQUEUE_HEAD(zqtree_upgrade_wqh);
+
+#define ERR_STATE(err, state)	((err) << 16 | (state))
+#define GET_ERR(state)		((state) >> 16)
+
+/* This can be refactored into generic one */
+int zqtree_upgrade(struct zqtree *qt, int target_state)
+{
+	int was_state, req_state = target_state;
+	int err;
+
+	if (target_state <= 0)
+		return 0;
+
+	/* Request an upgrade by changing state from previous
+	 * value to the -requested, indicating that the build is
+	 * in process */
+
+again:
+	was_state = atomic_cmpxchg(&qt->state, req_state - 1, -req_state);
+	if (was_state >= target_state || -was_state > target_state) {
+		/* We are in requested state or further already */
+		return -GET_ERR(was_state);
+	} else if (was_state < 0) {
+		/* Another thread upgrades to a state <= than ours */
+		req_state = -was_state;
+		/* Wait for state update */
+		err = wait_event_interruptible(&zqtree_upgrade_wqh,
+				 atomic_read(&qt->state) >= req_state);
+		req_state = atomic_read(&qt->state);
+		err = GET_ERR(req_state) ?: err;
+		/* OK, we got to our target_state or further */
+		if (err || req_state >= target_state)
+			return err;
+		req_state++;
+	} else if (was_state < req_state - 1) {
+		req_state = was_state + 1;
+	} else if (was_state == req_state - 1) {
+		/* We have locked it, let's update */
+		err = -ENOSYS;
+		switch (req_state) {
+		case ZQTREE_QUOTA:
+			err = zqtree_build_qdtree(zqtree);
+			break;
+		case ZQTREE_BLKTREE:
+			err = zqtree_build_blktree(zqtree);
+			break;
+		}
+		if (err) {
+			/* Failed we are, rest we must */
+			atomic_cmpxchg(&qt->state, -req_state,
+				       ERR_STATE(-err, req_state - 1));
+
+			return err;
+		}
+
+		atomic_cmpxchg(&qt->state, -req_state, req_state);
+		wake_up_all(&zqtree_upgrade_wqh);
+		if (req_state++ == target_state)
+			return 0;
+	}
+	goto again;
+}
+
 /* Private part */
 static int zqtree_quota_tree_destroy(struct zqtree *quota_tree)
 {
