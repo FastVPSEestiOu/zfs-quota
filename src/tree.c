@@ -32,25 +32,19 @@ struct zqtree {
 
 };
 
-#define ZQTREE_GET_TYPE(type) ((type) & ~ZQTREE_TYPE_FROM_SYNC)
-#define ZQTREE_IS_FROM_SYNC(type) !!(type & ZQTREE_TYPE_FROM_SYNC)
-
-#define ZQTREE_REF_BY_HANDLE	-1
-
 struct zqtree *zqtree_new(struct zqhandle *handle, int type)
 {
 	struct zqtree *qt;
-	if (ZQTREE_GET_TYPE(type) < 0 || ZQTREE_GET_TYPE(type) >= MAXQUOTAS)
+	if (type < 0 || type >= MAXQUOTAS)
 		return ERR_PTR(-EINVAL);
 
 	qt = kzalloc(sizeof(*qt), GFP_KERNEL);
 	if (!qt)
 		return ERR_PTR(-ENOMEM);
 
-	qt->type = ZQTREE_GET_TYPE(type);
+	qt->type = type;
 	qt->handle = handle;
-	atomic_set(&qt->refcnt, ZQTREE_IS_FROM_SYNC(type) ? ZQTREE_REF_BY_HANDLE
-							  : 1);
+	atomic_set(&qt->refcnt, 1);
 	atomic_set(&qt->state, ZQTREE_EMPTY);
 	INIT_RADIX_TREE(&qt->radix, GFP_KERNEL);
 
@@ -59,9 +53,7 @@ struct zqtree *zqtree_new(struct zqhandle *handle, int type)
 
 struct zqtree *zqtree_get(struct zqtree *qt)
 {
-	if (	qt
-	    &&	atomic_cmpxchg(&qt->refcnt, ZQTREE_REF_BY_HANDLE, 1) != -1
-	    &&	!atomic_inc_not_zero(&qt->refcnt))
+	if (qt && !atomic_inc_not_zero(&qt->refcnt))
 		/* quota tree is in process of destruction */
 		qt = NULL;
 	return qt;
@@ -216,6 +208,8 @@ static int zqtree_iterate_prop(void *zfsh,
 	while ((pair = zfs_prop_iter_item(&iter))) {
 
 		qd = zqtree_get_quota_data(quota_tree, pair->rid);
+		if (!qd)
+			break;
 		*(uint64_t *)((void *)qd + prop->offset) = pair->value;
 
 		zfs_prop_iter_next(&iter);
@@ -646,8 +640,8 @@ blktree_output_header(struct blktree_root *root, char *buf)
 	struct v2_disk_dqheader *dqh = (struct v2_disk_dqheader *)buf;
 	struct v2_disk_dqinfo *dq_disk_info;
 
-	dqh->dqh_magic = quota_magics[root->zqtree->type];
-	dqh->dqh_version = 1;
+	dqh->dqh_magic = cpu_to_le32(quota_magics[root->zqtree->type]);
+	dqh->dqh_version = cpu_to_le32(1);
 
 	dq_disk_info =
 	    (struct v2_disk_dqinfo *)(buf +
@@ -673,7 +667,7 @@ static struct blktree_data_block *to_data_block_ptr(void *ptr)
 }
 
 int zqtree_output_block(struct zqtree *zqtree,
-			 char *buf, uint32_t blknum)
+			char *buf, uint32_t blknum)
 {
 	struct blktree_root *blktree = zqtree->blktree_root;
 	struct blktree_block *node;
