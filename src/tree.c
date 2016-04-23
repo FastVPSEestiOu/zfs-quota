@@ -86,7 +86,8 @@ void zqtree_put(struct zqtree *qt)
 
 void zqtree_unref_zqhandle(struct zqtree *qt)
 {
-	qt->handle = NULL;
+	if (qt)
+		qt->handle = NULL;
 }
 
 static DECLARE_WAIT_QUEUE_HEAD(zqtree_upgrade_wqh);
@@ -565,7 +566,7 @@ static int zqtree_build_blktree(struct zqtree *zqtree)
 	struct blktree_root *blktree_root;
 
 	blktree_root = blktree_build(zqtree);
-	if (!IS_ERR_OR_NULL(blktree_root))
+	if (IS_ERR_OR_NULL(blktree_root))
 		return PTR_ERR(blktree_root);
 
 	zqtree->blktree_root = blktree_root;
@@ -676,6 +677,9 @@ int zqtree_output_block(struct zqtree *zqtree,
 {
 	struct blktree_root *blktree = zqtree->blktree_root;
 	struct blktree_block *node;
+
+	if (!blktree)
+		return -EIO;
 
 	if (blknum == 0)
 		return blktree_output_header(blktree, buf);
