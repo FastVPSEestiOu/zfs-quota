@@ -498,10 +498,10 @@ blktree_build(struct zqtree *zqtree)
 	{
 		data_block = blktree_insert(root, qd);
 		if (!data_block)
-			goto out_mem;
+			goto out_free_blktree;
 		block = blktree_get_pointer_block(block, path, root, qd->qid);
 		if (!block)
-			goto out_mem;
+			goto out_free_blktree;
 		if (!block->child) {
 			block->data_child = data_block;
 			block->offset = data_block->n - 1;
@@ -511,12 +511,13 @@ blktree_build(struct zqtree *zqtree)
 
 	/* renumerate data_blocks & insert them */
 	if (blktree_enumerate_data_blocks(root))
-		goto out_mem;
+		goto out_free_blktree;
 
 	return root;
 
+out_free_blktree:
+	blktree_free(root);
 out_mem:
-	printk(KERN_WARNING "Leaky\n");
 	return NULL;
 }
 
@@ -681,36 +682,29 @@ int zqtree_output_block(struct zqtree *zqtree,
 	return 0;
 }
 
-static uint32_t _get_blknum(void *ptr)
-{
-	if (is_data_block_ptr(ptr)) {
-		return to_data_block_ptr(ptr)->blknum;
-	} else {
-		return ((struct blktree_block *)ptr)->blknum;
-	}
-}
-
 static int blktree_free(struct blktree_root *root)
 {
-	void *blocks[32];
-	size_t n, blknum = 2, i;
+	void *block;
+	size_t blknum = 2;
+	struct blktree_data_block *data_block;
 
 	if (!root)
 		return 0;
 
-	while (true) {
-		n = radix_tree_gang_lookup(&root->blocks, blocks, blknum,
-					ARRAY_SIZE(blocks));
-
-		if (!n)
-			break;
-
-		for (i = 0; i < n; i++) {
-			blknum = _get_blknum(blocks[i]);
-			radix_tree_delete(&root->blocks, blknum);
-			kfree(to_ptr(blocks[i]));
-		}
+	while ((data_block = root->first_data_block)) {
+		root->first_data_block = data_block->next;
+		kfree(data_block);
 	}
+
+	while (true) {
+		block = radix_tree_delete(&root->blocks, blknum);
+		if (!block)
+			break;
+		if (!is_data_block_ptr(block))
+			kfree(block);
+		blknum++;
+	}
+
 	kfree(root);
 	return 0;
 }
