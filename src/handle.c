@@ -11,8 +11,10 @@
 #include "tree.h"
 #include "zfs.h"
 
-/* Z(FS)Q(UOTA) part. All the handles are stored into radix-tree zqhandle_tree
- * with access protected by zqhandle_tree_mutex.
+/**
+ * Z(FS)Q(UOTA) part. All the handles are stored into radix-tree zqhandle_tree
+ * with access protected by zqhandle_tree_mutex. This is due to the way simfs
+ * frees superblocks on unmount.
  */
 
 static DEFINE_MUTEX(zqhandle_tree_mutex);
@@ -79,10 +81,8 @@ void zqhandle_put(struct zqhandle *handle)
 	if (atomic_dec_and_test(&handle->refcnt)) {
 		int i;
 		spin_lock(&handle->lock);
-		for (i = 0; i < MAXQUOTAS; i++) {
-			zqtree_put(handle->quota[i]);
+		for (i = 0; i < MAXQUOTAS; i++)
 			handle->quota[i] = NULL;
-		}
 		spin_unlock(&handle->lock);
 		kfree(handle);
 	}
@@ -103,15 +103,14 @@ int zqhandle_unregister_superblock(struct super_block *sb)
 
 	err = 0;
 	zqhandle_put(handle);
-
 out:
 	mutex_unlock(&zqhandle_tree_mutex);
 	return 0;
 }
 
-static inline void zqhandle_ref(struct zqhandle *handle)
+struct zqhandle *zqhandle_get_zfsh(struct zqhandle *handle)
 {
-	atomic_inc(&handle->refcnt);
+	return handle->zfsh;
 }
 
 struct zqhandle *zqhandle_get(void *sb)
@@ -124,47 +123,61 @@ struct zqhandle *zqhandle_get(void *sb)
 	if (handle == NULL)
 		goto out;
 
-	zqhandle_ref(handle);
+	atomic_inc(&handle->refcnt);
 
 out:
 	mutex_unlock(&zqhandle_tree_mutex);
 	return handle;
 }
 
-struct zqtree *zqhandle_get_tree(struct zqhandle *handle, int type)
+/* Note: zqhandle don't reference the zqtree unless type has flag
+ * ZQTREE_TYPE_FROM_SYNC.
+ */
+struct zqtree *zqhandle_get_tree(struct zqhandle *handle, int type,
+				 int required_state)
 {
-	//struct zqtree *quota_tree;
-	if (type < 0 || type >= MAXQUOTAS)
-		return NULL;
+	struct zqtree *quota_tree;
 
+again:
 	spin_lock(&handle->lock);
-//again:
-	//quota_tree = zqtree_get(handle->quota[type]);
+	quota_tree = zqtree_get(handle->quota[type]);
 	spin_unlock(&handle->lock);
-	return NULL;
 
-#if 0
 	if (!quota_tree) {
-		quota_tree = zqtree_new();
+		quota_tree = zqtree_new(handle, type);
+		if (!quota_tree)
+			return NULL;
 
 		spin_lock(&handle->lock);
 		if (handle->quota[type]) {
-			zqtree_put(quota_tree);
+			spin_unlock(&handle->lock);
+			kfree(quota_tree);
 			goto again;
 		}
 		handle->quota[type] = quota_tree;
 		spin_unlock(&handle->lock);
-	} else if (!zqtree_young(quota_tree)) {
-		/* The tree is too old, let it fly away */
-		quota_tree = xchg(&handle->quota[type], NULL);
-		zqtree_put(quota_tree);
-
-		spin_lock(&handle->lock);
-		goto again;
 	}
 
-	return zqtree_get(quota_tree);
-#endif
+	if (zqtree_upgrade(quota_tree, required_state)) {
+		zqtree_put(quota_tree);
+		return NULL;
+	}
+
+	return quota_tree;
+}
+
+void zqhandle_unref_tree(struct zqhandle *handle, struct zqtree *zqtree)
+{
+	int i = 0;
+
+	spin_lock(&handle->lock);
+	for (i = 0; i < MAXQUOTAS; i++) {
+		if (handle->quota[i] != zqtree)
+			continue;
+		handle->quota[i] = NULL;
+		break;
+	}
+	spin_unlock(&handle->lock);
 }
 
 /* ZQ handle get/set quota */

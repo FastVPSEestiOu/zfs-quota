@@ -17,17 +17,20 @@ struct zqdata {
 #endif	/* HAVE_ZFS_OBJECT_QUOTA */
 };
 
+#define ZQTREE_TYPE_FROM_SYNC	(1 << 31)
 struct zqtree;
+struct zqhandle;
 
 /*
  * Z(FS)Q(UOTA) tree utils
  */
 
+struct zqtree *zqtree_new(struct zqhandle *handle, int type);
+struct zqtree *zqtree_get(struct zqtree *qt);
+void zqtree_put(struct zqtree *qt);
+
 /* Upgrade zqtree to the status, can sleep */
 int zqtree_upgrade(struct zqtree * zqtree, int target_state);
-
-/* Put zqtree */
-void zqtree_put_quota_tree(struct zqtree *quota_tree);
 
 /* Printing utilities */
 int zqtree_print_tree(struct zqtree *root);

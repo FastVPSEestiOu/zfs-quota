@@ -5,6 +5,7 @@
 #include <linux/slab.h>
 #include <linux/sched.h>
 #include <linux/mount.h>
+#include <linux/wait.h>
 
 #include "handle.h"
 #include "proc.h"
@@ -19,20 +20,36 @@ struct kmem_cache *quota_data_cachep = NULL;
 struct blktree_root;
 
 struct zqtree {
+	int			type;
+
+	struct zqhandle		*handle;
+
 	atomic_t		refcnt;
 	atomic_t		state;
+
 	struct radix_tree_root	radix;
 	struct blktree_root	*blktree_root;
+
 };
 
-struct zqtree *zqtree_new(void)
+#define ZQTREE_GET_TYPE(type) ((type) & ~ZQTREE_TYPE_FROM_SYNC)
+#define ZQTREE_IS_FROM_SYNC(type) !!(type & ZQTREE_TYPE_FROM_SYNC)
+
+#define ZQTREE_REF_BY_HANDLE	-1
+
+struct zqtree *zqtree_new(struct zqhandle *handle, int type)
 {
 	struct zqtree *qt;
+	if (ZQTREE_GET_TYPE(type) < 0 || ZQTREE_GET_TYPE(type) >= MAXQUOTAS)
+		return NULL;
 
 	qt = kzalloc(sizeof(*qt), GFP_KERNEL);
 	if (!qt)
 		return NULL;
-	atomic_set(&qt->refcnt, 1);
+	qt->type = ZQTREE_GET_TYPE(type);
+	qt->handle = handle;
+	atomic_set(&qt->refcnt, ZQTREE_IS_FROM_SYNC(type) ? ZQTREE_REF_BY_HANDLE
+							  : 1);
 	atomic_set(&qt->state, ZQTREE_EMPTY);
 	INIT_RADIX_TREE(&qt->radix, GFP_KERNEL);
 
@@ -41,12 +58,16 @@ struct zqtree *zqtree_new(void)
 
 struct zqtree *zqtree_get(struct zqtree *qt)
 {
-	if (qt)
-		atomic_inc(&qt->refcnt);
+	if (	qt
+	    &&	atomic_cmpxchg(&qt->refcnt, ZQTREE_REF_BY_HANDLE, 1) != -1
+	    &&	!atomic_inc_not_zero(&qt->refcnt))
+		/* quota tree is in process of destruction */
+		qt = NULL;
 	return qt;
 }
 
 static int zqtree_quota_tree_destroy(struct zqtree *quota_tree);
+static int blktree_free(struct blktree_root *root);
 
 void zqtree_put(struct zqtree *qt)
 {
@@ -54,15 +75,21 @@ void zqtree_put(struct zqtree *qt)
 		return;
 
 	if (atomic_dec_and_test(&qt->refcnt)) {
+		zqhandle_unref_tree(qt->handle, qt);
+
+		blktree_free(qt->blktree_root);
 		zqtree_quota_tree_destroy(qt);
 		kfree(qt);
 	}
 }
 
-static DECLARE_WAITQUEUE_HEAD(zqtree_upgrade_wqh);
+static DECLARE_WAIT_QUEUE_HEAD(zqtree_upgrade_wqh);
 
 #define ERR_STATE(err, state)	((err) << 16 | (state))
 #define GET_ERR(state)		((state) >> 16)
+
+static int zqtree_build_qdtree(struct zqtree *zqtree);
+static int zqtree_build_blktree(struct zqtree *zqtree);
 
 /* This can be refactored into generic one */
 int zqtree_upgrade(struct zqtree *qt, int target_state)
@@ -86,7 +113,7 @@ again:
 		/* Another thread upgrades to a state <= than ours */
 		req_state = -was_state;
 		/* Wait for state update */
-		err = wait_event_interruptible(&zqtree_upgrade_wqh,
+		err = wait_event_interruptible(zqtree_upgrade_wqh,
 				 atomic_read(&qt->state) >= req_state);
 		req_state = atomic_read(&qt->state);
 		err = GET_ERR(req_state) ?: err;
@@ -101,10 +128,10 @@ again:
 		err = -ENOSYS;
 		switch (req_state) {
 		case ZQTREE_QUOTA:
-			err = zqtree_build_qdtree(zqtree);
+			err = zqtree_build_qdtree(qt);
 			break;
 		case ZQTREE_BLKTREE:
-			err = zqtree_build_blktree(zqtree);
+			err = zqtree_build_blktree(qt);
 			break;
 		}
 		if (err) {
@@ -191,16 +218,20 @@ static int zqtree_iterate_prop(void *zfsh,
 	return zfs_prop_iter_error(&iter);
 }
 
-int zqtree_build_qdtree(struct zqtree *zqtree)
+static int zqtree_build_qdtree(struct zqtree *zqtree)
 {
 	int ret = 0;
+	struct zqhandle *handle = zqhandle_get(zqtree->handle);
 	zfs_prop_list_t *prop;
+	void *zfsh = zqhandle_get_zfsh(handle);
 
-	for (prop = zfs_get_prop_list(type); prop->prop >= 0; ++prop) {
-		ret = zqtree_iterate_prop(handle->zfsh, zqtree, prop);
+	for (prop = zfs_get_prop_list(zqtree->type); prop->prop >= 0; ++prop) {
+		ret = zqtree_iterate_prop(zfsh, zqtree, prop);
 		if (ret && ret != EOPNOTSUPP)
 			break;
 	}
+
+	zqhandle_put(handle);
 
 	if (ret == EOPNOTSUPP)
 		ret = 0;
@@ -334,7 +365,6 @@ struct blktree_block {
 
 struct blktree_root {
 	struct zqtree			*zqtree;
-	uint32_t			type;
 	uint32_t			blknum;
 
 	struct blktree_block		first_block;
@@ -475,7 +505,7 @@ blktree_enumerate_data_blocks(struct blktree_root *root)
 }
 
 static struct blktree_root *
-blktree_build(struct zqtree *zqtree, uint32_t type)
+blktree_build(struct zqtree *zqtree)
 {
 	struct blktree_block *path[QTREE_PATH] = {
 		[0 ... QTREE_PATH - 1]	= 0
@@ -492,7 +522,6 @@ blktree_build(struct zqtree *zqtree, uint32_t type)
 		goto out_mem;
 
 	root->blknum = 2;
-	root->type = type;
 	root->first_block.blknum = 1;
 	root->zqtree = zqtree;
 
@@ -525,6 +554,18 @@ blktree_build(struct zqtree *zqtree, uint32_t type)
 out_mem:
 	printk(KERN_WARNING "Leaky\n");
 	return NULL;
+}
+
+static int zqtree_build_blktree(struct zqtree *zqtree)
+{
+	struct blktree_root *blktree_root;
+
+	blktree_root = blktree_build(zqtree);
+	if (!IS_ERR_OR_NULL(blktree_root))
+		return PTR_ERR(blktree_root);
+
+	zqtree->blktree_root = blktree_root;
+	return 0;
 }
 
 static int
@@ -600,7 +641,7 @@ blktree_output_header(struct blktree_root *root, char *buf)
 	struct v2_disk_dqheader *dqh = (struct v2_disk_dqheader *)buf;
 	struct v2_disk_dqinfo *dq_disk_info;
 
-	dqh->dqh_magic = quota_magics[root->type];
+	dqh->dqh_magic = quota_magics[root->zqtree->type];
 	dqh->dqh_version = 1;
 
 	dq_disk_info =
@@ -666,7 +707,8 @@ static int blktree_free(struct blktree_root *root)
 	void *blocks[32];
 	size_t n, blknum = 2, i;
 
-	zqtree_put(root->zqtree);
+	if (!root)
+		return 0;
 
 	while (true) {
 		n = radix_tree_gang_lookup(&root->blocks, blocks, blknum,
