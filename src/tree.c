@@ -29,7 +29,6 @@ struct zqtree {
 
 	struct radix_tree_root	radix;
 	struct blktree_root	*blktree_root;
-
 };
 
 struct zqtree *zqtree_new(struct zqhandle *handle, int type)
@@ -90,60 +89,38 @@ static DECLARE_WAIT_QUEUE_HEAD(zqtree_upgrade_wqh);
 static int zqtree_build_qdtree(struct zqtree *zqtree);
 static int zqtree_build_blktree(struct zqtree *zqtree);
 
-/* This can be refactored into generic one */
-int zqtree_upgrade(struct zqtree *qt, int target_state)
+int zqtree_upgrade(struct zqtree *qt)
 {
-	int was_state, req_state = target_state;
+	int was_state;
 	int err;
-
-	if (target_state <= 0)
-		return 0;
 
 	/* Request an upgrade by changing state from previous
 	 * value to the -requested, indicating that the build is
 	 * in process */
 
-again:
-	was_state = atomic_cmpxchg(&qt->state, req_state - 1, -req_state);
-	if (was_state >= target_state || -was_state > target_state) {
-		/* We are in requested state or further already */
+	was_state = atomic_cmpxchg(&qt->state, 0, -1);
+	if (was_state > 0) {
 		return -GET_ERR(was_state);
 	} else if (was_state < 0) {
 		/* Another thread upgrades to a state <= than ours */
-		req_state = -was_state;
 		/* Wait for state update */
 		err = wait_event_interruptible(zqtree_upgrade_wqh,
-				 atomic_read(&qt->state) >= req_state);
-		req_state = atomic_read(&qt->state);
-		err = GET_ERR(req_state) ?: err;
-		/* OK, we got to our target_state or further */
-		if (err || req_state >= target_state)
-			return err;
-		req_state++;
-	} else if (was_state < req_state - 1) {
-		req_state = was_state + 1;
-	} else if (was_state == req_state - 1) {
+				 atomic_read(&qt->state) >= 1);
+		return err ?: GET_ERR(atomic_read(&qt->state));
+	} else if (was_state == 0) {
 		/* We have locked it, let's update */
-		err = -ENOSYS;
-		switch (req_state) {
-		case ZQTREE_QUOTA:
-			err = zqtree_build_qdtree(qt);
-			break;
-		case ZQTREE_BLKTREE:
+		err = zqtree_build_qdtree(qt);
+		if (!err)
 			err = zqtree_build_blktree(qt);
-			break;
-		}
 		if (err)
-			/* Failed we are, rest we must */
-			atomic_cmpxchg(&qt->state, -req_state,
-				       ERR_STATE(-err, req_state - 1));
+			atomic_cmpxchg(&qt->state, -1, ERR_STATE(-err, 0));
 		else
-			atomic_cmpxchg(&qt->state, -req_state, req_state);
+			atomic_cmpxchg(&qt->state, -1, 1);
 		wake_up_all(&zqtree_upgrade_wqh);
-		if (err || req_state++ == target_state)
-			return err;
+		return err;
 	}
-	goto again;
+
+	return 0;
 }
 
 /* Private part */
@@ -668,12 +645,17 @@ int zqtree_output_block(struct zqtree *zqtree,
 {
 	struct blktree_root *blktree = zqtree->blktree_root;
 	struct blktree_block *node;
+	int err;
 
 	if (!blktree)
 		return -EIO;
 
 	if (blknum == 0)
 		return blktree_output_header(blktree, buf);
+
+	err = zqtree_upgrade(zqtree);
+	if (err)
+		return err;
 
 	node = radix_tree_lookup(&blktree->blocks, blknum);
 	if (!node)

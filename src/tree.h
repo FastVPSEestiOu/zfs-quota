@@ -30,8 +30,8 @@ struct zqtree *zqtree_get(struct zqtree *qt);
 void zqtree_put(struct zqtree *qt);
 void zqtree_unref_zqhandle(struct zqtree *zqtree);
 
-/* Upgrade zqtree to the status, can sleep */
-int zqtree_upgrade(struct zqtree * zqtree, int target_state);
+/* Upgrade zqtree, can sleep */
+int zqtree_upgrade(struct zqtree * zqtree);
 
 /* Printing utilities */
 int zqtree_print_tree(struct zqtree *root);

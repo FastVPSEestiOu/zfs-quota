@@ -200,13 +200,7 @@ static int zfsquota_get_quoti(struct super_block *sb, int type, qid_t idx,
 
 static int zfsquota_sync(struct super_block *sb, int type)
 {
-#if 0
-	if (type == -1) {
-		zqtree_zfs_sync_tree(sb, USRQUOTA);
-		zqtree_zfs_sync_tree(sb, GRPQUOTA);
-	} else
-		zqtree_zfs_sync_tree(sb, type);
-#endif
+	/* You are misusing us and we don't sync with you */
 	return 0;
 }
 

@@ -6,6 +6,7 @@
 #include <linux/sched.h>
 #include <linux/mount.h>
 
+#include "handle.h"
 #include "radix-tree-iter.h"
 #include "proc.h"
 #include "tree.h"
@@ -110,7 +111,7 @@ out:
 	return 0;
 }
 
-struct zqhandle *zqhandle_get_zfsh(struct zqhandle *handle)
+void *zqhandle_get_zfsh(struct zqhandle *handle)
 {
 	return handle->zfsh;
 }
@@ -132,13 +133,8 @@ out:
 	return handle;
 }
 
-/* Note: zqhandle don't reference the zqtree unless type has flag
- * ZQTREE_TYPE_FROM_SYNC.
- */
-struct zqtree *zqhandle_get_tree(struct zqhandle *handle, int type,
-				 int required_state)
+struct zqtree *zqhandle_get_tree(struct zqhandle *handle, int type)
 {
-	int err;
 	struct zqtree *quota_tree;
 
 again:
@@ -160,13 +156,6 @@ again:
 		handle->quota[type] = quota_tree;
 		spin_unlock(&handle->lock);
 	}
-
-	err = zqtree_upgrade(quota_tree, required_state);
-	if (err) {
-		zqtree_put(quota_tree);
-		quota_tree = ERR_PTR(err);
-	}
-
 out:
 	return quota_tree;
 }

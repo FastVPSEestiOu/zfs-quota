@@ -31,7 +31,7 @@ static int zfs_aquotf_vfsv2r1_open(struct inode *inode, struct file *file)
 	if (!handle)
 		goto out_err;
 
-	quota_tree = zqhandle_get_tree(handle, type, ZQTREE_BLKTREE);
+	quota_tree = zqhandle_get_tree(handle, type);
 	zqhandle_put(handle);
 
 	if (IS_ERR(quota_tree)) {
