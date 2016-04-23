@@ -115,7 +115,7 @@ struct zqhandle *zqhandle_get_zfsh(struct zqhandle *handle)
 	return handle->zfsh;
 }
 
-struct zqhandle *zqhandle_get(void *sb)
+struct zqhandle *zqhandle_get_by_sb(void *sb)
 {
 	struct zqhandle *handle;
 
@@ -193,7 +193,7 @@ int zqhandle_get_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
 {
 	int err = -EIO;
 	struct zqdata quota_data;
-	struct zqhandle *handle = zqhandle_get(sb);
+	struct zqhandle *handle = zqhandle_get_by_sb(sb);
 
 	if (!handle)
 		goto out;
@@ -232,7 +232,7 @@ static inline uint64_t min_except_zero(uint64_t a, uint64_t b)
 
 int zqhandle_set_quota_dqblk(void *sb, int type, qid_t id, struct if_dqblk *di)
 {
-	struct zqhandle *handle = zqhandle_get(sb);
+	struct zqhandle *handle = zqhandle_get_by_sb(sb);
 	int ret = 0;
 	uint64_t limit;
 

@@ -27,7 +27,7 @@ static int zfs_aquotf_vfsv2r1_open(struct inode *inode, struct file *file)
 		goto out_err;
 
 	err = -ENOENT;
-	handle = zqhandle_get(sb);
+	handle = zqhandle_get_by_sb(sb);
 	if (!handle)
 		goto out_err;
 

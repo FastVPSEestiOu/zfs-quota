@@ -5,7 +5,7 @@ struct zqhandle;
 struct zqtree;
 
 void zqhandle_put(struct zqhandle *handle);
-struct zqhandle *zqhandle_get(void *sb);
+struct zqhandle *zqhandle_get_by_sb(void *sb);
 void *zqhandle_get_zfsh(struct zqhandle *handle);
 
 struct zqtree *zqhandle_get_tree(struct zqhandle *handle, int type,

@@ -227,17 +227,15 @@ static int zqtree_iterate_prop(void *zfsh,
 static int zqtree_build_qdtree(struct zqtree *zqtree)
 {
 	int ret = 0;
-	struct zqhandle *handle = zqhandle_get(zqtree->handle);
+	/* FIXME should ref handle */
+	void *zfsh = zqhandle_get_zfsh(zqtree->handle);
 	zfs_prop_list_t *prop;
-	void *zfsh = zqhandle_get_zfsh(handle);
 
 	for (prop = zfs_get_prop_list(zqtree->type); prop->prop >= 0; ++prop) {
 		ret = zqtree_iterate_prop(zfsh, zqtree, prop);
 		if (ret && ret != EOPNOTSUPP)
 			break;
 	}
-
-	zqhandle_put(handle);
 
 	if (ret == EOPNOTSUPP)
 		ret = 0;
