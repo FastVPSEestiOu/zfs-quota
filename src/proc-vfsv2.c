@@ -58,11 +58,20 @@ static int zfs_aquotf_vfsv2r1_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t read_proc_quotafile(char *page, off_t blknum,
-				   struct zqtree *root)
+static ssize_t zfs_aquotf_vfsv2r1_read_magic(struct zqtree *zqtree,
+					     char __user *buf)
 {
-	memset(page, 0, QTREE_BLOCKSIZE);
-	return zqtree_output_block(root, page, blknum);
+	char magic[8];
+	ssize_t ret;
+
+	ret = zqtree_output_magic(zqtree, magic);
+	if (ret < 0)
+		return -EIO;
+
+	if (copy_to_user(buf, magic, ret))
+		return -EFAULT;
+
+	return ret;
 }
 
 static ssize_t zfs_aquotf_vfsv2r1_read(struct file *file,
@@ -74,6 +83,10 @@ static ssize_t zfs_aquotf_vfsv2r1_read(struct file *file,
 	ssize_t l, l2, copied;
 	int err;
 	struct zqtree *zqtree = file->private_data;
+
+	if (*ppos == 0 && size == 8) {
+		return zfs_aquotf_vfsv2r1_read_magic(zqtree, buf);
+	}
 
 	err = -ENOMEM;
 	page = (char *)__get_free_page(GFP_KERNEL);
@@ -87,7 +100,9 @@ static ssize_t zfs_aquotf_vfsv2r1_read(struct file *file,
 		if (bufsize <= 0)
 			break;
 
-		l = read_proc_quotafile(page, *ppos / QTREE_BLOCKSIZE, zqtree);
+		/* TODO fix double memory set for non-zero regions */
+		memset(page, 0, QTREE_BLOCKSIZE);
+		l = zqtree_output_block(zqtree, page, *ppos / QTREE_BLOCKSIZE);
 		if (l <= 0)
 			break;
 		l = bufsize;

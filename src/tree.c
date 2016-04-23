@@ -606,21 +606,33 @@ blktree_output_block_data(struct blktree_data_block *data_block, char *buf)
 	0xd9c01927      /* GRPQUOTA */\
 }
 
-static int
-blktree_output_header(struct blktree_root *root, char *buf)
+int
+zqtree_output_magic(struct zqtree *zqtree, char *buf)
 {
 	static const uint quota_magics[] = V2_INITQMAGICS;
 
 	struct v2_disk_dqheader *dqh = (struct v2_disk_dqheader *)buf;
-	struct v2_disk_dqinfo *dq_disk_info;
 
-	dqh->dqh_magic = cpu_to_le32(quota_magics[root->zqtree->type]);
+	dqh->dqh_magic = cpu_to_le32(quota_magics[zqtree->type]);
 	dqh->dqh_version = cpu_to_le32(1);
 
-	dq_disk_info =
-	    (struct v2_disk_dqinfo *)(buf +
-				      sizeof(struct v2_disk_dqheader));
-	dq_disk_info->dqi_blocks = root->blknum;
+	return sizeof(struct v2_disk_dqheader);
+}
+
+static int
+blktree_output_header(struct blktree_root *blktree, char *buf)
+{
+	struct v2_disk_dqinfo *dq_disk_info;
+	int err;
+
+	err = zqtree_output_magic(blktree->zqtree, buf);
+	if (err < 0)
+		return err;
+
+	buf += err;
+
+	dq_disk_info = (struct v2_disk_dqinfo *)buf;
+	dq_disk_info->dqi_blocks = blktree->blknum;
 
 	return QTREE_BLOCKSIZE;
 }
@@ -641,21 +653,24 @@ static struct blktree_data_block *to_data_block_ptr(void *ptr)
 }
 
 int zqtree_output_block(struct zqtree *zqtree,
-			char *buf, uint32_t blknum)
+		        char *buf, uint32_t blknum)
 {
 	struct blktree_root *blktree = zqtree->blktree_root;
 	struct blktree_block *node;
 	int err;
 
-	if (!blktree)
-		return -EIO;
+	if (!blktree) {
+		err = zqtree_upgrade(zqtree);
+		if (err)
+			return err;
+
+		blktree = zqtree->blktree_root;
+		if (!blktree)
+			return -EIO;
+	}
 
 	if (blknum == 0)
 		return blktree_output_header(blktree, buf);
-
-	err = zqtree_upgrade(zqtree);
-	if (err)
-		return err;
 
 	node = radix_tree_lookup(&blktree->blocks, blknum);
 	if (!node)

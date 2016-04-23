@@ -38,7 +38,7 @@ int zqtree_print_tree(struct zqtree *root);
 void zqtree_print_quota_data(struct zqdata *qd);
 
 /* Block tree interface */
-int zqtree_output_block(struct zqtree *zqtree,
-			char *buf, uint32_t blknum);
+int zqtree_output_magic(struct zqtree *zqtree, char *buf);
+int zqtree_output_block(struct zqtree *zqtree, char *buf, uint32_t blknum);
 
 #endif /* TREE_H_INCLUDED */
