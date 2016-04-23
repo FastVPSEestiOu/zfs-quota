@@ -2,11 +2,7 @@
 #ifndef TREE_H_INCLUDED
 #define TREE_H_INCLUDED
 
-#define	ZQTREE_EMPTY		1
-#define	ZQTREE_QUOTA		2
-#define	ZQTREE_ZFSREQ		-2
-#define	ZQTREE_BLKTREE		3
-#define	ZQTREE_BLDBLKTREE	-3
+#define	ZQTREE_EMPTY		0
 
 struct zqdata {
 	qid_t qid;
