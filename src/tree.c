@@ -41,11 +41,12 @@ struct zqtree *zqtree_new(struct zqhandle *handle, int type)
 {
 	struct zqtree *qt;
 	if (ZQTREE_GET_TYPE(type) < 0 || ZQTREE_GET_TYPE(type) >= MAXQUOTAS)
-		return NULL;
+		return ERR_PTR(-EINVAL);
 
 	qt = kzalloc(sizeof(*qt), GFP_KERNEL);
 	if (!qt)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
+
 	qt->type = ZQTREE_GET_TYPE(type);
 	qt->handle = handle;
 	atomic_set(&qt->refcnt, ZQTREE_IS_FROM_SYNC(type) ? ZQTREE_REF_BY_HANDLE
@@ -81,6 +82,11 @@ void zqtree_put(struct zqtree *qt)
 		zqtree_quota_tree_destroy(qt);
 		kfree(qt);
 	}
+}
+
+void zqtree_unref_zqhandle(struct zqtree *qt)
+{
+	qt->handle = NULL;
 }
 
 static DECLARE_WAIT_QUEUE_HEAD(zqtree_upgrade_wqh);
@@ -667,15 +673,16 @@ static struct blktree_data_block *to_data_block_ptr(void *ptr)
 	return (struct blktree_data_block *)to_ptr(ptr);
 }
 
-int blktree_output_block(struct blktree_root *tree_root,
+int zqtree_output_block(struct zqtree *zqtree,
 			 char *buf, uint32_t blknum)
 {
+	struct blktree_root *blktree = zqtree->blktree_root;
 	struct blktree_block *node;
 
 	if (blknum == 0)
-		return blktree_output_header(tree_root, buf);
+		return blktree_output_header(blktree, buf);
 
-	node = radix_tree_lookup(&tree_root->blocks, blknum);
+	node = radix_tree_lookup(&blktree->blocks, blknum);
 	if (!node)
 		return 0;
 

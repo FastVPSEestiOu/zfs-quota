@@ -47,7 +47,7 @@ struct proc_dir_entry* zqproc_register_handle(struct super_block *sb)
 
 	sprintf(buf, "%08x", new_encode_dev(sb->s_dev));
 	dev_dir = proc_mkdir_data(buf, S_IRUSR | S_IXUSR,
-				zfsquota_proc_root, sb);
+				  zfsquota_proc_root, sb);
 
 	proc_create_data(aquota_user, S_IRUSR, dev_dir,
 			 &zfs_aquotf_vfsv2r1_file_operations,
@@ -71,14 +71,12 @@ int zqproc_unregister_handle(struct super_block *sb)
 int __init zfsquota_proc_init(void)
 {
 	zfsquota_proc_root = proc_mkdir_data("zfsquota", S_IRWXU, NULL, NULL);
+	if (!zfsquota_proc_root)
+		return -ENOMEM;
 	return 0;
 }
 
 void __exit zfsquota_proc_exit(void)
 {
-#ifndef CONFIG_VE
-	proc_remove(zfsquota_proc_root);
-#else
-	remove_proc_entry("zfsquota", NULL);
-#endif
+	remove_proc_subtree("zfsquota", NULL);
 }

@@ -81,8 +81,10 @@ void zqhandle_put(struct zqhandle *handle)
 	if (atomic_dec_and_test(&handle->refcnt)) {
 		int i;
 		spin_lock(&handle->lock);
-		for (i = 0; i < MAXQUOTAS; i++)
+		for (i = 0; i < MAXQUOTAS; i++) {
+			zqtree_unref_zqhandle(handle->quota[i]);
 			handle->quota[i] = NULL;
+		}
 		spin_unlock(&handle->lock);
 		kfree(handle);
 	}
@@ -136,6 +138,7 @@ out:
 struct zqtree *zqhandle_get_tree(struct zqhandle *handle, int type,
 				 int required_state)
 {
+	int err;
 	struct zqtree *quota_tree;
 
 again:
@@ -145,8 +148,8 @@ again:
 
 	if (!quota_tree) {
 		quota_tree = zqtree_new(handle, type);
-		if (!quota_tree)
-			return NULL;
+		if (IS_ERR(quota_tree))
+			goto out;
 
 		spin_lock(&handle->lock);
 		if (handle->quota[type]) {
@@ -158,17 +161,22 @@ again:
 		spin_unlock(&handle->lock);
 	}
 
-	if (zqtree_upgrade(quota_tree, required_state)) {
+	err = zqtree_upgrade(quota_tree, required_state);
+	if (err) {
 		zqtree_put(quota_tree);
-		return NULL;
+		quota_tree = ERR_PTR(err);
 	}
 
+out:
 	return quota_tree;
 }
 
 void zqhandle_unref_tree(struct zqhandle *handle, struct zqtree *zqtree)
 {
 	int i = 0;
+
+	if (!handle)
+		return;
 
 	spin_lock(&handle->lock);
 	for (i = 0; i < MAXQUOTAS; i++) {

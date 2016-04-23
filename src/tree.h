@@ -28,6 +28,7 @@ struct zqhandle;
 struct zqtree *zqtree_new(struct zqhandle *handle, int type);
 struct zqtree *zqtree_get(struct zqtree *qt);
 void zqtree_put(struct zqtree *qt);
+void zqtree_unref_zqhandle(struct zqtree *zqtree);
 
 /* Upgrade zqtree to the status, can sleep */
 int zqtree_upgrade(struct zqtree * zqtree, int target_state);
@@ -35,5 +36,9 @@ int zqtree_upgrade(struct zqtree * zqtree, int target_state);
 /* Printing utilities */
 int zqtree_print_tree(struct zqtree *root);
 void zqtree_print_quota_data(struct zqdata *qd);
+
+/* Block tree interface */
+int zqtree_output_block(struct zqtree *zqtree,
+			char *buf, uint32_t blknum);
 
 #endif /* TREE_H_INCLUDED */

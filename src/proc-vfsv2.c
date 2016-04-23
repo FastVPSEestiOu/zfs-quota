@@ -10,45 +10,59 @@
 #include <linux/ctype.h>
 
 #include "proc.h"
-#include "radix-tree-iter.h"
+#include "handle.h"
 #include "tree.h"
+
+#define QTREE_BLOCKSIZE	1024
 
 static int zfs_aquotf_vfsv2r1_open(struct inode *inode, struct file *file)
 {
 	int err, type;
 	struct super_block *sb;
-	struct zblktree *quota_tree;
-	struct blktree_root *root;
+	struct zqtree *quota_tree;
+	struct zqhandle *handle;
 
 	err = zqproc_get_sb_type(inode, &sb, &type);
 	if (err)
 		goto out_err;
 
-	quota_tree = zblktree_get_sync_quota_tree(sb, type);
-	root = blktree_build(quota_tree, type);
+	err = -ENOENT;
+	handle = zqhandle_get(sb);
+	if (!handle)
+		goto out_err;
 
-	file->private_data = root;
+	quota_tree = zqhandle_get_tree(handle, type, ZQTREE_BLKTREE);
+	zqhandle_put(handle);
+
+	if (IS_ERR(quota_tree)) {
+		err = PTR_ERR(quota_tree);
+		goto out_err;
+	}
+	file->private_data = quota_tree;
 
 	return 0;
 
 out_err:
 	return err;
 }
+
 static int zfs_aquotf_vfsv2r1_release(struct inode *inode, struct file *file)
 {
-	struct blktree_root *root;
+	struct zqtree *zqtree;
 
-	root = file->private_data;
+	zqtree = file->private_data;
 	file->private_data = NULL;
 
-	return blktree_free(root);
+	zqtree_put(zqtree);
+
+	return 0;
 }
 
 static ssize_t read_proc_quotafile(char *page, off_t blknum,
-				   struct blktree_root *root)
+				   struct zqtree *root)
 {
 	memset(page, 0, QTREE_BLOCKSIZE);
-	return blktree_output_block(page, blknum, root);
+	return zqtree_output_block(root, page, blknum);
 }
 
 static ssize_t zfs_aquotf_vfsv2r1_read(struct file *file,
@@ -59,7 +73,7 @@ static ssize_t zfs_aquotf_vfsv2r1_read(struct file *file,
 	size_t bufsize;
 	ssize_t l, l2, copied;
 	int err;
-	struct blktree_root *root = file->private_data;
+	struct zqtree *zqtree = file->private_data;
 
 	err = -ENOMEM;
 	page = (char *)__get_free_page(GFP_KERNEL);
@@ -73,7 +87,7 @@ static ssize_t zfs_aquotf_vfsv2r1_read(struct file *file,
 		if (bufsize <= 0)
 			break;
 
-		l = read_proc_quotafile(page, *ppos / QTREE_BLOCKSIZE, root);
+		l = read_proc_quotafile(page, *ppos / QTREE_BLOCKSIZE, zqtree);
 		if (l <= 0)
 			break;
 		l = bufsize;
@@ -102,7 +116,7 @@ out_err:
 	return err;
 }
 
-struct file_operations zfs_aquotf_vfsv2r1_file_operations = {
+const struct file_operations zfs_aquotf_vfsv2r1_file_operations = {
 	.open = &zfs_aquotf_vfsv2r1_open,
 	.read = &zfs_aquotf_vfsv2r1_read,
 	.release = &zfs_aquotf_vfsv2r1_release,

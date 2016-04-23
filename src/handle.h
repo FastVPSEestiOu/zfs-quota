@@ -8,7 +8,8 @@ void zqhandle_put(struct zqhandle *handle);
 struct zqhandle *zqhandle_get(void *sb);
 void *zqhandle_get_zfsh(struct zqhandle *handle);
 
-void zqhandle_get_tree(struct zqhandle *handle, int type, int target_state);
+struct zqtree *zqhandle_get_tree(struct zqhandle *handle, int type,
+				 int required_state);
 /* Unreference tree from the handle */
 void zqhandle_unref_tree(struct zqhandle *handle, struct zqtree *zqtree);
 
