@@ -13,7 +13,6 @@ struct zqdata {
 #endif	/* HAVE_ZFS_OBJECT_QUOTA */
 };
 
-#define ZQTREE_TYPE_FROM_SYNC	(1 << 31)
 struct zqtree;
 struct zqhandle;
 
@@ -24,7 +23,6 @@ struct zqhandle;
 struct zqtree *zqtree_new(struct zqhandle *handle, int type);
 struct zqtree *zqtree_get(struct zqtree *qt);
 void zqtree_put(struct zqtree *qt);
-void zqtree_unref_zqhandle(struct zqtree *zqtree);
 
 /* Upgrade zqtree, can sleep */
 int zqtree_upgrade(struct zqtree * zqtree);

@@ -77,15 +77,23 @@ out_free:
 	goto out;
 }
 
+struct zqhandle *zqhandle_get(struct zqhandle *handle)
+{
+	if (likely(handle))
+		atomic_inc(&handle->refcnt);
+	return handle;
+}
+
 void zqhandle_put(struct zqhandle *handle)
 {
+	if (!handle)
+		return;
+
 	if (atomic_dec_and_test(&handle->refcnt)) {
 		int i;
 		spin_lock(&handle->lock);
-		for (i = 0; i < MAXQUOTAS; i++) {
-			zqtree_unref_zqhandle(handle->quota[i]);
+		for (i = 0; i < MAXQUOTAS; i++)
 			handle->quota[i] = NULL;
-		}
 		spin_unlock(&handle->lock);
 		kfree(handle);
 	}
@@ -126,7 +134,7 @@ struct zqhandle *zqhandle_get_by_sb(void *sb)
 	if (handle == NULL)
 		goto out;
 
-	atomic_inc(&handle->refcnt);
+	handle = zqhandle_get(handle);
 
 out:
 	mutex_unlock(&zqhandle_tree_mutex);

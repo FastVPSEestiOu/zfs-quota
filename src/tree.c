@@ -42,7 +42,7 @@ struct zqtree *zqtree_new(struct zqhandle *handle, int type)
 		return ERR_PTR(-ENOMEM);
 
 	qt->type = type;
-	qt->handle = handle;
+	qt->handle = zqhandle_get(handle);
 	atomic_set(&qt->refcnt, 1);
 	atomic_set(&qt->state, ZQTREE_EMPTY);
 	INIT_RADIX_TREE(&qt->radix, GFP_KERNEL);
@@ -63,22 +63,17 @@ static int blktree_free(struct blktree_root *root);
 
 void zqtree_put(struct zqtree *qt)
 {
-	if (!qt)
+	if (unlikely(!qt))
 		return;
 
 	if (atomic_dec_and_test(&qt->refcnt)) {
 		zqhandle_unref_tree(qt->handle, qt);
+		zqhandle_put(qt->handle);
 
 		blktree_free(qt->blktree_root);
 		zqtree_quota_tree_destroy(qt);
 		kfree(qt);
 	}
-}
-
-void zqtree_unref_zqhandle(struct zqtree *qt)
-{
-	if (qt)
-		qt->handle = NULL;
 }
 
 static DECLARE_WAIT_QUEUE_HEAD(zqtree_upgrade_wqh);
@@ -94,12 +89,8 @@ int zqtree_upgrade(struct zqtree *qt)
 	int was_state;
 	int err;
 
-	/* Request an upgrade by changing state from previous
-	 * value to the -requested, indicating that the build is
-	 * in process */
-
 	was_state = atomic_cmpxchg(&qt->state, 0, -1);
-	if (was_state > 0) {
+	if (likely(was_state > 0)) {
 		return -GET_ERR(was_state);
 	} else if (was_state < 0) {
 		/* Another thread upgrades to a state <= than ours */
@@ -196,7 +187,7 @@ static int zqtree_iterate_prop(void *zfsh,
 static int zqtree_build_qdtree(struct zqtree *zqtree)
 {
 	int ret = 0;
-	/* FIXME should ref handle */
+
 	void *zfsh = zqhandle_get_zfsh(zqtree->handle);
 	zfs_prop_list_t *prop;
 
