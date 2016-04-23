@@ -133,18 +133,15 @@ again:
 			err = zqtree_build_blktree(qt);
 			break;
 		}
-		if (err) {
+		if (err)
 			/* Failed we are, rest we must */
 			atomic_cmpxchg(&qt->state, -req_state,
 				       ERR_STATE(-err, req_state - 1));
-
-			return err;
-		}
-
-		atomic_cmpxchg(&qt->state, -req_state, req_state);
+		else
+			atomic_cmpxchg(&qt->state, -req_state, req_state);
 		wake_up_all(&zqtree_upgrade_wqh);
-		if (req_state++ == target_state)
-			return 0;
+		if (err || req_state++ == target_state)
+			return err;
 	}
 	goto again;
 }
