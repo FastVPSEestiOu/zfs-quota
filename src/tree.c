@@ -126,8 +126,8 @@ static int zqtree_quota_tree_destroy(struct zqtree *quota_tree)
 	     (qd = my_radix_tree_iter_item(&iter));
 	     my_radix_tree_iter_next(&iter, qd->qid)) {
 
+		qd = radix_tree_delete(root, qd->qid);
 		kmem_cache_free(quota_data_cachep, qd);
-		radix_tree_delete(root, qd->qid);
 	}
 
 	return 0;
@@ -142,9 +142,7 @@ static struct zqdata *zqtree_get_quota_data(struct zqtree *quota_tree,
 	quota_data = radix_tree_lookup(&quota_tree->radix, id);
 
 	if (quota_data == NULL) {
-		quota_data = kmem_cache_zalloc(quota_data_cachep,
-					       GFP_KERNEL | GFP_NOFS);
-
+		quota_data = kmem_cache_zalloc(quota_data_cachep, GFP_NOFS);
 		if (!quota_data)
 			return NULL;
 
