@@ -120,14 +120,16 @@ static int zqtree_quota_tree_destroy(struct zqtree *quota_tree)
 	my_radix_tree_iter_t iter;
 	struct zqdata *qd;
 	struct radix_tree_root *root;
+	uint32_t qid;
 
 	root = &quota_tree->radix;
 	for (my_radix_tree_iter_start(&iter, root, 0);
 	     (qd = my_radix_tree_iter_item(&iter));
-	     my_radix_tree_iter_next(&iter, qd->qid)) {
+	     my_radix_tree_iter_next(&iter, qid)) {
 
-		qd = radix_tree_delete(root, qd->qid);
+		qid = qd->qid;
 		kmem_cache_free(quota_data_cachep, qd);
+		radix_tree_delete(root, qid);
 	}
 
 	return 0;
