@@ -52,7 +52,6 @@
 struct zqfs_fs_info {
 	struct vfsmount *real_mnt;
 	char fs_root[PATH_MAX];
-	char fake_dev_name[PATH_MAX];
 };
 
 static struct super_operations zqfs_super_ops;
@@ -168,8 +167,7 @@ static int zqfs_show_options(struct seq_file *m, struct vfsmount *mnt)
 {
 	struct zqfs_fs_info *fs_info = mnt->mnt_sb->s_fs_info;
 
-	seq_printf(m, ",devname=%s,fsroot=%s",
-		   fs_info->fake_dev_name, fs_info->fs_root);
+	seq_printf(m, ",fsroot=%s", fs_info->fs_root);
 #ifdef CONFIG_QUOTA
 	if (sb_has_quota_loaded(mnt->mnt_sb, USRQUOTA))
 		seq_puts(m, ",usrquota");
@@ -184,40 +182,16 @@ static int zqfs_show_options(struct seq_file *m, struct dentry *d_root)
 	struct super_block *sb = d_root->d_sb;
 	struct zqfs_fs_info *fs_info = sb->s_fs_info;
 
-	seq_printf(m, ",devname=%s,fsroot=%s",
-		   fs_info->fake_dev_name, fs_info->fs_root);
+	seq_printf(m, ",fsroot=%s", fs_info->fs_root);
 	seq_puts(m, ",usrquota");
 	seq_puts(m, ",grpquota");
 	return 0;
 }
 #endif /* #else #ifdef CONFIG_VE */
 
-#ifdef CONFIG_VE
-static int zqfs_show_devname(struct seq_file *m, struct vfsmount *mnt)
-#else /* #ifdef CONFIG_VE */
-static int zqfs_show_devname(struct seq_file *m, struct dentry *d_root)
-#endif /* #else #ifdef CONFIG_VE */
-{
-	struct super_block *sb;
-	struct zqfs_fs_info *fs_info;
-
-#ifdef CONFIG_VE
-	sb = mnt->mnt_sb;
-#else
-	sb = d_root->d_sb;
-#endif
-
-	fs_info = sb->s_fs_info;
-
-	seq_escape(m, fs_info->fake_dev_name, " \t\n\\");
-	return 0;
-}
-
-
 static struct super_operations zqfs_super_ops = {
 #ifdef CONFIG_QUOTA
 	.show_options	= &zqfs_show_options,
-	.show_devname   = &zqfs_show_devname,
 #	ifdef CONFIG_VE /* This stuff is VZ-specific */
 	.show_type	= &zqfs_show_type,
 	.get_quota_root	= &zqfs_quota_root,
@@ -438,11 +412,10 @@ int path_lookup(const char *name, unsigned int flags, struct nameidata *nd)
 #endif /* #ifdef HAVE_PATH_LOOKUP */
 
 enum {
-	Opt_devname, Opt_fsroot, Opt_err
+	Opt_fsroot, Opt_err
 };
 
 static const match_table_t tokens = {
-	{Opt_devname, "devname=%s"},
 	{Opt_fsroot, "fsroot=%s"},
 	{Opt_err, NULL}
 };
@@ -469,9 +442,6 @@ struct zqfs_fs_info *zqfs_parse_options(char *options)
 		args[0].to = args[0].from = NULL;
 		token = match_token(p, tokens, args);
 		switch (token) {
-		case Opt_devname:
-			strncpy_from_arg(fs_info->fake_dev_name, &args[0]);
-			break;
 		case Opt_fsroot:
 			strncpy_from_arg(fs_info->fs_root, &args[0]);
 			break;
@@ -481,9 +451,8 @@ struct zqfs_fs_info *zqfs_parse_options(char *options)
 		}
 	}
 
-	if (!fs_info->fs_root[0] || !fs_info->fake_dev_name[0]) {
-		printk(KERN_ERR
-		       "Both fsroot and devname options are required\n");
+	if (!fs_info->fs_root[0]) {
+		printk(KERN_ERR "fsroot is required\n");
 		err = -EINVAL;
 		goto out_err;
 	}

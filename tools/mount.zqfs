@@ -1,29 +1,25 @@
 #!/bin/sh
 
-dev=$1
-mountpoint=$2
+set -e
+
+dev="$1"
+mountpoint="$2"
 shift 2
 
 find_option() {
-	local string=$1
-	local optname=$2
-	value_and_suffix=${string##*$optname=}
+	local string="$1"
+	local optname="$2"
+	value_and_suffix="${string##*$optname}"
 	test "$value_and_suffix" = "$string" && return 0
-	echo ${value_and_suffix%%,*}
+	echo "${value_and_suffix%%,*}"
 }
 
-devname=
+devname="${dev}"
 fsroot=
-force=
 while getopts :o: OPT "$@"; do
 	case $OPT in
 		o)
-		devname=$(find_option $OPTARG devname)
-		fdevname="${devname#!}"
-		test "$devname" != "$fdevname" && force=1
-		devname="$fdevname"
-
-		fsroot=$(find_option $OPTARG fsroot)
+		fsroot="$(find_option $OPTARG 'fsroot=')"
 		;;
 		*)
 		;;
@@ -31,16 +27,16 @@ while getopts :o: OPT "$@"; do
 done
 
 error=
-test -z "$devname" && {
+test "${devname##/dev/zqfs/}" = "${devname}" && {
 	error=1
-	echo "devname is missing"
+	echo "device not from /dev/zqfs directory"
 }
 test -z "$fsroot" && {
 	error=1
 	echo "fsroot is missing"
 }
 test -n "$error" && exit 1
-test "$(stat -c%T --file-system $fsroot)" != "zfs" && {
+test "$(stat -c%T --file-system $fsroot 2>/dev/null)" != "zfs" && {
 	echo "$fsroot is not a ZFS"
 	exit 1
 }
@@ -53,12 +49,13 @@ if test -e $devname; then
 	rm -f $devname
 fi
 
-mount -i -t zqfs $dev $mountpoint "${@/!}"
+mount -i -t zqfs $devname $mountpoint "$@"
 test $? -ne 0 && exit 1
 
-dev=$(stat -c%04D $mountpoint)
+dev=$(stat -c%04D $mountpoint 2>/dev/null)
 maj=${dev%??}
 min=${dev#??}
+test -d /dev/zqfs/ || mkdir -p /dev/zqfs
 mknod $devname b 0x$maj 0x$min
 
 rm -f $mountpoint/aquota.{user.group}
