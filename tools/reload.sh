@@ -9,7 +9,7 @@ zpool import -a || :
 zfs mount -a || :
 vzctl stop $VEID || :
 rmmod zfs-quota || :
-insmod ./src/zfs-quota.ko
+insmod ./src/zfs-quota.ko vz_qid_limit=4294967295
 vzctl start $VEID
 sleep 1
 #vzctl exec 1001 strace /quotactl_ex

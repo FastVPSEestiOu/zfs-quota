@@ -1,9 +1,15 @@
 
+#include <linux/module.h>
+
 #include <linux/vzquota.h>
 #include <linux/virtinfo.h>
 #include <linux/ve_proto.h>
 
 #include "quota.h"
+
+static unsigned int vz_qid_limit = 128 * 1024;
+
+module_param(vz_qid_limit, uint, 0644);
 
 static int zfsquota_notifier_call(struct vnotifier_block *self,
 				  unsigned long n, void *data, int err)
@@ -12,9 +18,13 @@ static int zfsquota_notifier_call(struct vnotifier_block *self,
 	int status = 0;
 
 	switch (n) {
-	case VIRTINFO_QUOTA_ON:
-		status = zfsquota_setup_quota(viq->super);
+	case VIRTINFO_QUOTA_ON: {
+		struct zfsquota_options zfsq_opts = {
+			.qid_limit = vz_qid_limit
+		};
+		status = zfsquota_setup_quota_opts(viq->super, &zfsq_opts);
 		break;
+	}
 	case VIRTINFO_QUOTA_OFF:
 		status = zfsquota_teardown_quota(viq->super);
 		break;

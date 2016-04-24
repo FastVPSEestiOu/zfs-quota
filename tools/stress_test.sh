@@ -163,9 +163,15 @@ copy_logs() {
     done
 }
 
+init_vz_qid_limit() {
+	[ -f /sys/module/zfs_quota/parameters/vz_qid_limit ] &&
+		echo 4294967295 > /sys/module/zfs_quota/parameters/vz_qid_limit
+}
+
 do_stress_test() {
     local VE_NUMS=${1-8}
     local RUNS=${2-1024}
+    init_vz_qid_limit
     ves="$(start_ves 1100 $((1100 + $VE_NUMS - 1)))"
     qrandom_pids="$(get_qrandom_pids "$ves")"
 
