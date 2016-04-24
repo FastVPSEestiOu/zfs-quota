@@ -20,7 +20,8 @@ struct zqhandle;
  * Z(FS)Q(UOTA) tree utils
  */
 
-struct zqtree *zqtree_new(struct zqhandle *handle, int type);
+struct zqtree *zqtree_new(struct zqhandle *handle, int type,
+			  unsigned int qid_limit);
 struct zqtree *zqtree_get(struct zqtree *qt);
 void zqtree_put(struct zqtree *qt);
 

@@ -23,6 +23,7 @@ struct blktree_root;
 
 struct zqtree {
 	int			type;
+	unsigned int		qid_limit;
 
 	struct zqhandle		*handle;
 
@@ -33,7 +34,8 @@ struct zqtree {
 	struct blktree_root	*blktree_root;
 };
 
-struct zqtree *zqtree_new(struct zqhandle *handle, int type)
+struct zqtree *zqtree_new(struct zqhandle *handle, int type,
+			  unsigned int qid_limit)
 {
 	struct zqtree *qt;
 	if (type < 0 || type >= MAXQUOTAS)
@@ -45,6 +47,7 @@ struct zqtree *zqtree_new(struct zqhandle *handle, int type)
 
 	qt->type = type;
 	qt->handle = zqhandle_get(handle);
+	qt->qid_limit = qid_limit;
 	atomic_set(&qt->refcnt, 1);
 	atomic_set(&qt->state, ZQTREE_EMPTY);
 	INIT_RADIX_TREE(&qt->radix, GFP_KERNEL);
@@ -168,22 +171,27 @@ static int zqtree_iterate_prop(void *zfsh,
 {
 	zfs_prop_iter_t iter;
 	zfs_prop_pair_t *pair;
+	int err = 0;
 
 	struct zqdata *qd;
 
 	zfs_prop_iter_start(zfsh, prop->prop, &iter);
 	while ((pair = zfs_prop_iter_item(&iter))) {
 
-		qd = zqtree_get_quota_data(quota_tree, pair->rid);
-		if (!qd)
-			break;
-		*(uint64_t *)((void *)qd + prop->offset) = pair->value;
+		if (pair->rid < quota_tree->qid_limit) {
+			qd = zqtree_get_quota_data(quota_tree, pair->rid);
+			if (!qd) {
+				err = -ENOMEM;
+				break;
+			}
+			*(uint64_t *)((void *)qd + prop->offset) = pair->value;
+		}
 
 		zfs_prop_iter_next(&iter);
 	}
 	zfs_prop_iter_stop(&iter);
 
-	return zfs_prop_iter_error(&iter);
+	return err ?: zfs_prop_iter_error(&iter);
 }
 
 static int zqtree_build_qdtree(struct zqtree *zqtree)

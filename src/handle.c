@@ -157,7 +157,7 @@ again:
 	spin_unlock(&handle->lock);
 
 	if (!quota_tree) {
-		quota_tree = zqtree_new(handle, type);
+		quota_tree = zqtree_new(handle, type, handle->qid_limit);
 		if (IS_ERR(quota_tree))
 			goto out;
 
