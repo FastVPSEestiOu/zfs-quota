@@ -41,13 +41,7 @@ test "$(stat -c%T --file-system $fsroot 2>/dev/null)" != "zfs" && {
 	exit 1
 }
 
-if test -e $devname; then
-	test -z "$force" && {
-		echo "$devname exists"
-		exit 1
-	}
-	rm -f $devname
-fi
+test -e $devname && rm -f $devname
 
 mount -i -t zqfs $devname $mountpoint "$@"
 test $? -ne 0 && exit 1
