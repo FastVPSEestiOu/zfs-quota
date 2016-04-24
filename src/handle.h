@@ -15,7 +15,9 @@ struct zqtree *zqhandle_get_tree(struct zqhandle *handle, int type);
 void zqhandle_unref_tree(struct zqhandle *handle, struct zqtree *zqtree);
 
 /* Register and unregister fake-FS superblock  */
-int zqhandle_register_superblock(struct super_block *sb);
+struct zfsquota_options;
+int zqhandle_register_superblock(struct super_block *sb,
+				 struct zfsquota_options *zfsq_opts);
 int zqhandle_unregister_superblock(struct super_block *sb);
 
 /* Get/set quota dqblk for given superblock, quota type and id */

@@ -6,6 +6,7 @@
 #include <linux/sched.h>
 #include <linux/mount.h>
 
+#include "quota.h"
 #include "handle.h"
 #include "radix-tree-iter.h"
 #include "proc.h"
@@ -22,12 +23,13 @@ static DEFINE_MUTEX(zqhandle_tree_mutex);
 static RADIX_TREE(zqhandle_tree, GFP_KERNEL);
 
 struct zqhandle {
-	struct super_block *sb;
-	atomic_t refcnt;
-	void *zfsh;
+	struct super_block	*sb;
+	atomic_t		refcnt;
+	void			*zfsh;
 
-	spinlock_t lock;
-	struct zqtree *quota[MAXQUOTAS];
+	spinlock_t		lock;
+	unsigned int		qid_limit;
+	struct zqtree		*quota[MAXQUOTAS];
 };
 
 static inline void *get_zfsh(struct super_block *sb)
@@ -39,7 +41,8 @@ static inline void *get_zfsh(struct super_block *sb)
 #endif /* #else #ifdef CONFIG_VE */
 }
 
-int zqhandle_register_superblock(struct super_block *sb)
+int zqhandle_register_superblock(struct super_block *sb,
+				 struct zfsquota_options *zfsq_opts)
 {
 	struct zqhandle *data = NULL;
 	int err;
@@ -62,6 +65,9 @@ int zqhandle_register_superblock(struct super_block *sb)
 	data->sb = sb;
 	data->zfsh = get_zfsh(sb);
 	atomic_set(&data->refcnt, 1);
+	if (zfsq_opts) {
+		data->qid_limit = zfsq_opts->qid_limit;
+	}
 
 	mutex_lock(&zqhandle_tree_mutex);
 	err = radix_tree_insert(&zqhandle_tree, (unsigned long)sb, data);

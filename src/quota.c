@@ -226,7 +226,8 @@ struct quota_format_type zfs_quota_empty_vfsv2_format = {
 	.qf_owner = THIS_MODULE,
 };
 
-int zfsquota_setup_quota(struct super_block *sb)
+int zfsquota_setup_quota_opts(struct super_block *sb,
+			      struct zfsquota_options *zfsq_opts)
 {
 	const char *fsname;
 	int err = 0;
@@ -251,11 +252,17 @@ int zfsquota_setup_quota(struct super_block *sb)
 	sb->s_dquot.info[USRQUOTA].dqi_format = &zfs_quota_empty_vfsv2_format;
 	sb->s_dquot.info[GRPQUOTA].dqi_format = &zfs_quota_empty_vfsv2_format;
 
-	err = zqhandle_register_superblock(sb);
+	err = zqhandle_register_superblock(sb, zfsq_opts);
 	if (err)
 		module_put(THIS_MODULE);
 
 	return err;
+}
+EXPORT_SYMBOL(zfsquota_setup_quota_opts);
+
+int zfsquota_setup_quota(struct super_block *sb)
+{
+	return zfsquota_setup_quota_opts(sb, NULL);
 }
 EXPORT_SYMBOL(zfsquota_setup_quota);
 

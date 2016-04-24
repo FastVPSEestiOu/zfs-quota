@@ -13,6 +13,8 @@
 #include "tree.h"
 #include "zfs.h"
 
+//#error "TODO fix mount.zqfs, add limits (probably via ugidlimit by vzdquota) and recheck the whole thing"
+
 /* ZFS QUOTA radix-tree key qid -> value quota_data */
 
 struct kmem_cache *quota_data_cachep = NULL;

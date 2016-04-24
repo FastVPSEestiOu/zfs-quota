@@ -50,8 +50,9 @@
 #define ZQFS_GET_LOWER_FS_SB(sb) sb->s_root->d_sb
 
 struct zqfs_fs_info {
-	struct vfsmount *real_mnt;
-	char fs_root[PATH_MAX];
+	struct vfsmount		*real_mnt;
+	unsigned int		qid_limit;
+	char			fs_root[PATH_MAX];
 };
 
 static struct super_operations zqfs_super_ops;
@@ -168,6 +169,8 @@ static int zqfs_show_options(struct seq_file *m, struct vfsmount *mnt)
 	struct zqfs_fs_info *fs_info = mnt->mnt_sb->s_fs_info;
 
 	seq_printf(m, ",fsroot=%s", fs_info->fs_root);
+	if (fs_info->qid_limit != UINT_MAX)
+		seq_printf(m, ",limit=%u", fs_info->qid_limit);
 #ifdef CONFIG_QUOTA
 	if (sb_has_quota_loaded(mnt->mnt_sb, USRQUOTA))
 		seq_puts(m, ",usrquota");
@@ -183,6 +186,8 @@ static int zqfs_show_options(struct seq_file *m, struct dentry *d_root)
 	struct zqfs_fs_info *fs_info = sb->s_fs_info;
 
 	seq_printf(m, ",fsroot=%s", fs_info->fs_root);
+	if (fs_info->qid_limit != UINT_MAX)
+		seq_printf(m, ",limit=%u", fs_info->qid_limit);
 	seq_puts(m, ",usrquota");
 	seq_puts(m, ",grpquota");
 	return 0;
@@ -412,17 +417,36 @@ int path_lookup(const char *name, unsigned int flags, struct nameidata *nd)
 #endif /* #ifdef HAVE_PATH_LOOKUP */
 
 enum {
-	Opt_fsroot, Opt_err
+	Opt_fsroot, Opt_limit, Opt_err
 };
 
 static const match_table_t tokens = {
 	{Opt_fsroot, "fsroot=%s"},
+	{Opt_limit, "limit=%u"},
 	{Opt_err, NULL}
 };
 
 static inline char *strncpy_from_arg(char *dest, substring_t *arg)
 {
 	return strncpy(dest, arg->from, arg->to - arg->from);
+}
+
+static inline int kstrtouint_from_arg(unsigned int *target, substring_t *arg,
+				      int base)
+{
+	char *val;
+	int err;
+
+	err = -ENOMEM;
+	val = kstrndup(arg->from, (uintptr_t)(arg->to - arg->from),
+		       GFP_KERNEL);
+	if (!val)
+		goto out;
+
+	err = kstrtouint(val, base, target);
+	kfree(val);
+out:
+	return err;
 }
 
 struct zqfs_fs_info *zqfs_parse_options(char *options)
@@ -436,6 +460,8 @@ struct zqfs_fs_info *zqfs_parse_options(char *options)
 	if (!fs_info)
 		return ERR_PTR(-ENOMEM);
 
+	fs_info->qid_limit = UINT_MAX;
+
 	while ((p = strsep(&options, ",")) != NULL) {
 		if (!*p)
 			continue;
@@ -443,7 +469,15 @@ struct zqfs_fs_info *zqfs_parse_options(char *options)
 		token = match_token(p, tokens, args);
 		switch (token) {
 		case Opt_fsroot:
-			strncpy_from_arg(fs_info->fs_root, &args[0]);
+			err = -ENOMEM;
+			if (!strncpy_from_arg(fs_info->fs_root, &args[0]))
+				goto out_err;
+			break;
+		case Opt_limit:
+			err = kstrtouint_from_arg(&fs_info->qid_limit,
+						  &args[0], 10);
+			if (err)
+				goto out_err;
 			break;
 		case Opt_err:
 			err = -EINVAL;
@@ -468,6 +502,7 @@ static int zqfs_fill_super(struct super_block *s, void *data, int silent)
 {
 	int err;
 	struct zqfs_fs_info *fs_info = NULL;
+	struct zfsquota_options zfsq_opts;
 	struct nameidata nd;
 
 	fs_info = zqfs_parse_options(data);
@@ -497,7 +532,8 @@ static int zqfs_fill_super(struct super_block *s, void *data, int silent)
 
 	path_put(&nd.path);
 
-	return zfsquota_setup_quota(s);
+	zfsq_opts.qid_limit = fs_info->qid_limit;
+	return zfsquota_setup_quota_opts(s, &zfsq_opts);
 
 out_path:
 	path_put(&nd.path);
