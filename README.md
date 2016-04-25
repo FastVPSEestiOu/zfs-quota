@@ -61,7 +61,7 @@ sed -e '/^\s\+MODULES=.*vzdquota/ {
 sed -e '/DISK_QUOTA=/ { s/yes/no/; }' -i /etc/vz/vz.conf
 ```
 
-The machine must be rebooted afterwards as the `vzdquota` module does not
+The machine must be reboot afterwards as the `vzdquota` module does not
 support the module unload.
 
 This will disable OpenVZ per-container (level1) quotas as well. They will be
@@ -85,7 +85,11 @@ Now (re)start the VE and execute the `repquota` from inside it:
 vzctl exec $CTID repquota -a
 ```
 
-It should provide the output with the current disk usage.
+It should provide the output with the current disk usage. *NOTE* that the
+maximum output quota id by default equals 131072. This can be changed with
+`zfs-quota` module parameter `vz_qid_limit` either during module load
+or via file `/sys/module/zfs_quota/parameters/vz_qid_limit` and remounting
+the `simfs` filesystem.
 
 Usage with ZQFS
 ---------------
@@ -100,75 +104,14 @@ That being said here is how you can use it. Just mount the `zqfs` type file
 system above the ZFS:
 
 ```shell
-mount -t zqfs none /mnt/zqfs -o /zfs/data,/dev/fake_dev
+mount -t zqfs /dev/zqfs/mydev /mnt/zqfs -o fsroot=/zfs/data[,limit=qid_limit]
 ```
 
-This will allocate a (hidden) block device and mount the filesystem on top
-of that. The device must be created at a given path as it is one referenced
-in the /proc/mounts:
+This will mount the ZQFS from the given ZFS root and create appropriate device
+node. The optional `limit` is used to specify maximum QID that will be shown
+for user.
 
-```shell
-# grep zqfs /proc/mounts 
-/dev/fake_dev /mnt/zqfs zqfs rw,relatime,dev=/dev/fake_dev,fsroot=/,usrquota,grpquota 0 0
-```
+TODO
+----
 
-The `quota` utils require a valid block device to pass to the `quotactl`
-system call. Create it. First examine the ZQFS root:
-
-```shell
-# stat /mnt/zqfs
-  File: "/mnt/zqfs"
-  Size: 14            Blocks: 3          IO Block: 1024   directory
-Device: 25h/37d Inode: 4           Links: 3
-Access: (0755/drwxr-xr-x)  Uid: (    0/    root)   Gid: (    0/    root)
-Access: 2016-03-28 01:41:27.158000000 +0300
-Modify: 2016-03-26 21:39:23.134000000 +0200
-Change: 2016-03-26 21:39:23.134000000 +0200
- Birth: -
-```
-
-Now create the appropriate block device:
-
-```shell
-# mknod /dev/fake_dev b 0 0x25
-```
-
-And link the quota data files provided by `/proc/zfsquota` directory into
-the filesystem root:
-
-```shell
-# ln -fs /proc/zfsquota/00000025/aquota.user /mnt/zqfs
-# ln -fs /proc/zfsquota/00000025/aquota.group /mnt/zqfs
-```
-
-Now try the `repquota`:
-
-```shell
-repquota /mnt/zqfs
-...
-```
-
-Writing an external mount utility is to be done.
-
-Implementation
---------------
-
-1. Filesystems superblocks are registered via `zfsquota_init_superblock` and
-   deregistered by `zfsquota_free_superblock`. These are called by the notify
-   mechanism of the OpenVZ for the `simfs` and dirctly from the `zqfs`.
-   This is due to `simfs` uses `s_fs_info` and frees `s_root` before calling
-   to us, making us unable to.  These are put into `radix_tree` keyed by
-   superblock pointer, a better data structure should be used such as a
-   hashtable.
-1. Structure `struct zqhandle` holds all the necessary data to work with ZFS:
-   a superblock reference, ZFS handle (ZFS' superblock `s_fs_info`), refcnt
-   and a MAXQUOTA of `quota_tree`s. All the structures are kept in the
-   `radix_tree` and protected by its mutex `zqhandle_tree_mutex` as well.
-   Reference counting is used to keep an eye on the `struct zqhandle` and
-   `quota_tree`s usage: use `zqhandle_get` to get handle struct for a given
-   superblock and `zqhandle_put` to put it.
-1. Structure `struct quota_tree` represents a quota tree for a given quota
-   type. It consists of a `radix_tree` keyed with quota IDs (user or group IDs)
-   and with `struct quota_data` values, both are `version`ised to remove stale
-   entries. Quota tree is protected by a mutex.
-1. 
+* Implement `vzdquota` interface as a `vzquota` executable to set `ugidlimit`.
