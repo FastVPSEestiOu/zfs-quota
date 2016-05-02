@@ -164,3 +164,69 @@ AC_DEFUN([AC_PATH_LOOKUP],	[
 		AC_MSG_RESULT([no])
 	])
 ])
+
+dnl #
+dnl # AC_PROC_MKDIR_DATA checks if there is proc_mkdir_data
+dnl #
+AC_DEFUN([AC_PROC_MKDIR_DATA],	[
+	AC_MSG_CHECKING([whether proc_mkdir_data is accessible])
+	ZFS_LINUX_TRY_COMPILE([
+		#include <linux/proc_fs.h>
+	],[
+		proc_mkdir_data(NULL, 0, NULL, NULL);
+	],[
+		AC_MSG_RESULT([yes])
+		AC_DEFINE(HAVE_PROC_MKDIR_DATA, 1, [Define if proc_mkdir_data is exported])
+	],[
+		AC_MSG_RESULT([no])
+	])
+])
+
+dnl #
+dnl # AC_PROC_GET_PARENT_DATA checks if there is proc_get_parent_data
+dnl #
+AC_DEFUN([AC_PROC_GET_PARENT_DATA],	[
+	AC_MSG_CHECKING([whether proc_get_parent_data is accessible])
+	ZFS_LINUX_TRY_COMPILE([
+		#include <linux/proc_fs.h>
+	],[
+		proc_get_parent_data(NULL);
+	],[
+		AC_MSG_RESULT([yes])
+		AC_DEFINE(HAVE_PROC_GET_PARENT_DATA, 1,
+			  [Define if proc_get_parent_data is exported])
+	],[
+		AC_MSG_RESULT([no])
+	])
+])
+
+dnl #
+dnl # AC_HAVE_SHOW_OPTIONS_VFSMOUNT checks if there show_options' last arg
+dnl # is struct vfsmount *
+dnl #
+AC_DEFUN([AC_HAVE_SHOW_OPTIONS_VFSMOUNT],	[
+	AC_MSG_CHECKING([whether super_operations.show_options accepts vfsmount])
+	ZFS_LINUX_TRY_COMPILE([
+		#include <linux/fs.h>
+	],[
+		int foobar_show_options(struct seq_file *m,
+					struct vfsmount *mnt)
+		{
+			m = m;
+			mnt = mnt;
+			return 0;
+		}
+
+		struct super_operations sops = {
+			.show_options = foobar_show_options,
+		};
+
+		sops = sops;
+	],[
+		AC_MSG_RESULT([yes])
+		AC_DEFINE(HAVE_SHOW_OPTIONS_VFSMOUNT, 1,
+			  [Define if super_operations.show_options accepts vfsmount as the last argument])
+	],[
+		AC_MSG_RESULT([no])
+	])
+])

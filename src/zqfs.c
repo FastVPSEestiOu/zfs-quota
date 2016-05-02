@@ -23,7 +23,6 @@
 #include <linux/sched.h>
 #include <linux/statfs.h>
 #include <linux/genhd.h>
-#include <linux/reiserfs_fs.h>
 #include <linux/exportfs.h>
 #include <linux/seq_file.h>
 #include <linux/quotaops.h>
@@ -163,7 +162,7 @@ static void zqfs_show_type(struct seq_file *m, struct super_block *sb)
 }
 #endif /* #ifdef CONFIG_VE */
 
-#ifdef CONFIG_VE
+#ifdef HAVE_SHOW_OPTIONS_VFSMOUNT
 static int zqfs_show_options(struct seq_file *m, struct vfsmount *mnt)
 {
 	struct zqfs_fs_info *fs_info = mnt->mnt_sb->s_fs_info;
@@ -171,15 +170,13 @@ static int zqfs_show_options(struct seq_file *m, struct vfsmount *mnt)
 	seq_printf(m, ",fsroot=%s", fs_info->fs_root);
 	if (fs_info->qid_limit != UINT_MAX)
 		seq_printf(m, ",limit=%u", fs_info->qid_limit);
-#ifdef CONFIG_QUOTA
 	if (sb_has_quota_loaded(mnt->mnt_sb, USRQUOTA))
 		seq_puts(m, ",usrquota");
 	if (sb_has_quota_loaded(mnt->mnt_sb, GRPQUOTA))
 		seq_puts(m, ",grpquota");
-#endif
 	return 0;
 }
-#else /* #ifdef CONFIG_VE */
+#else /* #ifdef HAVE_SHOW_OPTIONS_VFSMOUNT */
 static int zqfs_show_options(struct seq_file *m, struct dentry *d_root)
 {
 	struct super_block *sb = d_root->d_sb;
@@ -192,7 +189,7 @@ static int zqfs_show_options(struct seq_file *m, struct dentry *d_root)
 	seq_puts(m, ",grpquota");
 	return 0;
 }
-#endif /* #else #ifdef CONFIG_VE */
+#endif /* #else #ifdef HAVE_SHOW_OPTIONS_VFSMOUNT */
 
 static struct super_operations zqfs_super_ops = {
 #ifdef CONFIG_QUOTA

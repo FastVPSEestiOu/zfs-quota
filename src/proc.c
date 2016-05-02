@@ -7,6 +7,7 @@
 
 #include "tree.h"
 #include "proc.h"
+#include "proc-compat.h"
 
 static struct proc_dir_entry *zfsquota_proc_root;
 
@@ -17,11 +18,6 @@ static const char aquota_group[] = "aquota.group";
 
 int zqproc_ve_get_sb_type(struct inode *inode, struct super_block **psb,
 		       int *ptype);
-
-void *proc_get_parent_data(const struct inode *inode);
-
-struct proc_dir_entry *proc_mkdir_data(const char *name, umode_t mode,
-		struct proc_dir_entry *parent, void *data);
 
 #ifndef CONFIG_VE
 int zqproc_get_sb_type(struct inode *inode, struct super_block **psb,

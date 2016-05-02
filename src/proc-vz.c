@@ -218,24 +218,6 @@ out_err:
 	return err;
 }
 
-void *proc_get_parent_data(const struct inode *inode)
-{
-	return PROC_I(inode)->pde->parent->data;
-}
-
-struct proc_dir_entry *proc_mkdir_data(const char *name, mode_t mode,
-		struct proc_dir_entry *parent, void *data)
-{
-	struct proc_dir_entry *pde;
-	pde = proc_mkdir(name, parent);
-	if (pde) {
-		if (mode)
-			pde->mode = S_IFDIR | mode;
-		pde->data = data;
-	}
-	return pde;
-}
-
 static struct file_operations zfs_aquotq_file_operations = {
 	.read = &generic_read_dir,
 	.readdir = &zfs_aquotq_readdir,

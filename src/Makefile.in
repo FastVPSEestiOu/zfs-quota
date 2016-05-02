@@ -2,6 +2,7 @@
 obj-m = zfs-quota.o zqfs.o
 zfs-quota-y += handle.o
 zfs-quota-y += proc.o
+zfs-quota-y += proc-compat.o
 zfs-quota-y += proc-vfsv2.o
 zfs-quota-y += quota.o
 zfs-quota-y += radix-tree-iter.o
