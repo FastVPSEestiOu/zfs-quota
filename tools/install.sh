@@ -41,10 +41,8 @@ install_spl() {
 
 install_zfs() {
 	[ -f zfs_installed ] && return
-	git clone https://github.com/paboldin/zfs/ || :
+	git clone https://github.com/zfsonlinux/zfs.git || :
 	pushd zfs
-	git pull
-	git checkout dnode_quota
 	[ ! -f ./configure ] && ./autogen.sh
 	[ ! -f Makefile ] && ./configure --with-linux-obj=$KDIR
 	make -j
@@ -55,7 +53,7 @@ install_zfs() {
 
 install_zfs_quota() {
 	ssh-keyscan -t rsa,dsa -H github.com >> ~/.ssh/known_hosts
-	git clone git@github.com:paboldin/zfs-quota.git || :
+	git clone https://github.com/FastVPSEestiOu/zfs-quota.git || :
 	pushd zfs-quota
 	automake --force-missing --add-missing 1>/dev/null 2>&1 || :
 	autoreconf -fisv
