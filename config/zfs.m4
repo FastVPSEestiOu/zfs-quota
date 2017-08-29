@@ -71,11 +71,9 @@ AC_DEFUN([AC_ZFS_HAVE_OBJECT_QUOTA],	[
 	ZFS_LINUX_TRY_COMPILE([
 		#include <spl_config.h>
 		#include <zfs_config.h>
-		#include <sys/zfs_context.h>
-		#include <sys/types.h>
-		#include <sys/zfs_vfsops.h>
+		#include <sys/fs/zfs.h>
 	],[
-		int t = ZFS_IOC_USEROBJSPACE_UPGRADE;
+		int t = ZFS_PROP_USEROBJUSED;
 		(void) t;
 	],[
 		AC_MSG_RESULT([yes])
