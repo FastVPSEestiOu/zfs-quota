@@ -228,3 +228,24 @@ AC_DEFUN([AC_HAVE_SHOW_OPTIONS_VFSMOUNT],	[
 		AC_MSG_RESULT([no])
 	])
 ])
+
+dnl #
+dnl # AC_HAVE_GET_QUOTA_ROOT checks if super_operations has get_quota_root
+dnl # method
+dnl #
+AC_DEFUN([AC_HAVE_GET_QUOTA_ROOT],	[
+	AC_MSG_CHECKING([whether super_operations.get_quota_root exists])
+	ZFS_LINUX_TRY_COMPILE([
+		#include <linux/fs.h>
+	],[
+		struct super_operations sops = {};
+
+		(void) sops.get_quota_root((struct super_block *)NULL);
+	],[
+		AC_MSG_RESULT([yes])
+		AC_DEFINE(HAVE_GET_QUOTA_ROOT, 1,
+			  [Define if super_operations has get_quota_root method])
+	],[
+		AC_MSG_RESULT([no])
+	])
+])

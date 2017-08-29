@@ -34,11 +34,11 @@ struct zqhandle {
 
 static inline void *get_zfsh(struct super_block *sb)
 {
-#ifdef CONFIG_VE
+#ifdef HAVE_GET_QUOTA_ROOT
 	return sb->s_op->get_quota_root(sb)->i_sb->s_fs_info;
-#else /* #ifdef CONFIG_VE */
+#else /* #ifdef HAVE_GET_QUOTA_ROOT */
 	return sb->s_root->d_inode->i_sb->s_fs_info;
-#endif /* #else #ifdef CONFIG_VE */
+#endif /* #else #ifdef HAVE_GET_QUOTA_ROOT */
 }
 
 int zqhandle_register_superblock(struct super_block *sb,
